@@ -9,11 +9,13 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ser.VirtualBeanPropertyWriter;
 
 /**
- * Annotation that may be used to add "virtual" properties to be written
- * after regular properties (although ordering may be changed using
- * both standard <code>@JsonPropertyOrder</code> annotation, and
- * properties of this annotation).
- * 
+ * Annotation used to add "virtual" properties that will be written
+ * after regular properties during serialization.
+ * <p>
+ * Please note that the "virtual" properties added using this annotation
+ * do not obey any specific order, including the order defined
+ * by {@link com.fasterxml.jackson.annotation.JsonPropertyOrder}.
+ *
  * @since 2.5
  */
 @Target({ElementType.ANNOTATION_TYPE, ElementType.TYPE })
@@ -34,14 +36,15 @@ public @interface JsonAppend
 
     /**
      * Indicator used to determine whether properties defined are to be
-     * appended before (false) or prepended before (true) regular properties.
+     * appended after (false) or prepended before (true) regular properties.
      * Affects all kinds of properties defined using this annotation.
      */
     public boolean prepend() default false;
-    
+
     /**
      * Definition of a single attribute-backed property.
-     * Attribute-backed properties will be appended after regular properties
+     * Attribute-backed properties will be appended after (or prepended before,
+     * as per {@link #prepend}) regular properties
      * in specified order, although their placement may be further changed
      * by the usual property-ordering functionality (alphabetic sorting;
      * explicit ordering)
@@ -80,7 +83,7 @@ public @interface JsonAppend
          */
         public boolean required() default false;
     }
-    
+
     /**
      * Definition of a single general virtual property.
      */

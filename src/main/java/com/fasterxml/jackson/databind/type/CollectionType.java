@@ -42,7 +42,7 @@ public final class CollectionType
     }
 
     /**
-     * @deprecated Since 2.7, remove from 2.8
+     * @deprecated Since 2.7, remove from 2.9
      */
     @Deprecated // since 2.7
     public static CollectionType construct(Class<?> rawType, JavaType elemT) {
@@ -61,13 +61,6 @@ public final class CollectionType
                 null, null, false);
     }
 
-    @Deprecated // since 2.7
-    @Override
-    protected JavaType _narrow(Class<?> subclass) {
-        return new CollectionType(subclass, _bindings,
-                _superClass, _superInterfaces, _elementType, null, null, _asStatic);
-    }
-
     @Override
     public JavaType withContentType(JavaType contentType) {
         if (_elementType == contentType) {
@@ -76,7 +69,7 @@ public final class CollectionType
         return new CollectionType(_class, _bindings, _superClass, _superInterfaces,
                 contentType, _valueHandler, _typeHandler, _asStatic);
     }
-    
+
     @Override
     public CollectionType withTypeHandler(Object h) {
         return new CollectionType(_class, _bindings,

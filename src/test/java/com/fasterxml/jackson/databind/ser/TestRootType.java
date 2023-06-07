@@ -8,8 +8,10 @@ import com.fasterxml.jackson.core.*;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.annotation.JsonTypeInfo.As;
 import com.fasterxml.jackson.annotation.JsonTypeInfo.Id;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.exc.InvalidDefinitionException;
 import com.fasterxml.jackson.databind.type.TypeFactory;
 
 /**
@@ -28,7 +30,7 @@ public class TestRootType
     interface BaseInterface {
         int getB();
     }
-    
+
     static class BaseType
         implements BaseInterface
     {
@@ -40,7 +42,7 @@ public class TestRootType
 
     static class SubType extends BaseType {
         public String a2 = "x";
-        
+
         public boolean getB2() { return true; }
     }
 
@@ -50,20 +52,21 @@ public class TestRootType
     public static class TestClass398 extends BaseClass398 {
        public String property = "aa";
     }
-    
+
     @JsonRootName("root")
     static class WithRootName {
         public int a = 3;
     }
 
-    // [Issue#412]
+    // [databind#412]
+    @JsonPropertyOrder({ "uuid", "type" })
     static class TestCommandParent {
         public String uuid;
         public int type;
     }
 
     static class TestCommandChild extends TestCommandParent { }
-    
+
     /*
     /**********************************************************
     /* Main tests
@@ -74,7 +77,7 @@ public class TestRootType
     {
         WRAP_ROOT_MAPPER.configure(SerializationFeature.WRAP_ROOT_VALUE, true);
     }
-    
+
     @SuppressWarnings("unchecked")
     public void testSuperClass() throws Exception
     {
@@ -114,15 +117,16 @@ public class TestRootType
 
     public void testInArray() throws Exception
     {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = jsonMapperBuilder()
         // must force static typing, otherwise won't matter a lot
-        mapper.configure(MapperFeature.USE_STATIC_TYPING, true);
+                .configure(MapperFeature.USE_STATIC_TYPING, true)
+                .build();
         SubType[] ob = new SubType[] { new SubType() };
         String json = mapper.writerFor(BaseInterface[].class).writeValueAsString(ob);
         // should propagate interface type through due to root declaration; static typing
         assertEquals("[{\"b\":3}]", json);
     }
-    
+
     /**
      * Unit test to ensure that proper exception is thrown if declared
      * root type is not compatible with given value instance.
@@ -137,12 +141,19 @@ public class TestRootType
         try {
             w.writeValueAsString(bean);
             fail("Should have failed due to incompatible type");
-        } catch (JsonProcessingException e) {
+        } catch (InvalidDefinitionException e) {
+            verifyException(e, "Incompatible types");
+        }
+
+        // and also with alternate output method
+        try {
+            w.writeValueAsBytes(bean);
+            fail("Should have failed due to incompatible type");
+        } catch (InvalidDefinitionException e) {
             verifyException(e, "Incompatible types");
         }
     }
-    
-    // [JACKSON-398]
+
     public void testJackson398() throws Exception
     {
         ObjectMapper mapper = objectMapper();
@@ -151,7 +162,7 @@ public class TestRootType
         typedList.add(new TestClass398());
 
         final String EXP = "[{\"beanClass\":\"TestRootType$TestClass398\",\"property\":\"aa\"}]";
-        
+
         // First simplest way:
         String json = mapper.writerFor(collectionType).writeValueAsString(typedList);
         assertEquals(EXP, json);
@@ -183,14 +194,13 @@ public class TestRootType
         assertEquals("456", mapper.writerFor(Long.TYPE).writeValueAsString(Long.valueOf(456L)));
     }
 
-    // [JACKSON-630] also, allow annotation to define root name
     public void testRootNameAnnotation() throws Exception
     {
         String json = WRAP_ROOT_MAPPER.writeValueAsString(new WithRootName());
         assertEquals("{\"root\":{\"a\":3}}", json);
     }
 
-    // [Issue#412]
+    // [databind#412]
     public void testRootNameWithExplicitType() throws Exception
     {
         TestCommandChild cmd = new TestCommandChild();
@@ -200,6 +210,6 @@ public class TestRootType
         ObjectWriter writer = WRAP_ROOT_MAPPER.writerFor(TestCommandParent.class);
         String json =  writer.writeValueAsString(cmd);
 
-        assertEquals(json, "{\"TestCommandParent\":{\"uuid\":\"1234\",\"type\":1}}");
+        assertEquals("{\"TestCommandParent\":{\"uuid\":\"1234\",\"type\":1}}", json);
     }
 }

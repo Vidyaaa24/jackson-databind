@@ -1,10 +1,12 @@
 package com.fasterxml.jackson.databind.deser.impl;
 
 import java.io.IOException;
+import java.util.Collection;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.jsontype.TypeDeserializer;
+import com.fasterxml.jackson.databind.type.LogicalType;
 
 /**
  * Simple deserializer that will call configured type deserializer, passing
@@ -31,19 +33,49 @@ public final class TypeWrappedDeserializer
         _deserializer = (JsonDeserializer<Object>) deser;
     }
 
+    @Override // since 2.12
+    public LogicalType logicalType() {
+        return _deserializer.logicalType();
+    }
+
     @Override
     public Class<?> handledType() {
         return _deserializer.handledType();
     }
-    
-    @Override
-    public Object deserialize(JsonParser jp, DeserializationContext ctxt) throws IOException
-    {
-        return _deserializer.deserializeWithType(jp, ctxt, _typeDeserializer);
+
+    @Override // since 2.9
+    public Boolean supportsUpdate(DeserializationConfig config) {
+        return _deserializer.supportsUpdate(config);
     }
 
     @Override
-    public Object deserializeWithType(JsonParser jp, DeserializationContext ctxt,
+    public JsonDeserializer<?> getDelegatee() {
+        return _deserializer.getDelegatee();
+    }
+
+    @Override
+    public Collection<Object> getKnownPropertyNames() {
+        return _deserializer.getKnownPropertyNames();
+    }
+
+    @Override
+    public Object getNullValue(DeserializationContext ctxt) throws JsonMappingException {
+        return _deserializer.getNullValue(ctxt);
+    }
+
+    @Override
+    public Object getEmptyValue(DeserializationContext ctxt) throws JsonMappingException {
+        return _deserializer.getEmptyValue(ctxt);
+    }
+
+    @Override
+    public Object deserialize(JsonParser p, DeserializationContext ctxt) throws IOException
+    {
+        return _deserializer.deserializeWithType(p, ctxt, _typeDeserializer);
+    }
+
+    @Override
+    public Object deserializeWithType(JsonParser p, DeserializationContext ctxt,
         TypeDeserializer typeDeserializer) throws IOException
     {
         // should never happen? (if it can, could call on that object)
@@ -51,12 +83,12 @@ public final class TypeWrappedDeserializer
     }
 
     @Override
-    public Object deserialize(JsonParser jp, DeserializationContext ctxt,
+    public Object deserialize(JsonParser p, DeserializationContext ctxt,
             Object intoValue) throws IOException
     {
         /* 01-Mar-2013, tatu: Hmmh. Tough call as to what to do... need
          *   to delegate, but will this work reliably? Let's just hope so:
          */
-        return _deserializer.deserialize(jp,  ctxt, intoValue);
+        return _deserializer.deserialize(p,  ctxt, intoValue);
     }
 }

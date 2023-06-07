@@ -8,7 +8,6 @@ import com.fasterxml.jackson.core.*;
 import com.fasterxml.jackson.core.io.IOContext;
 import com.fasterxml.jackson.core.base.ParserBase;
 import com.fasterxml.jackson.core.base.GeneratorBase;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Basic tests to ensure that {@link FormatSchema} instances are properly
@@ -27,7 +26,7 @@ public class TestFormatSchema extends BaseMapTest
         @Override
         public String getSchemaType() { return "test"; }
     }
-    
+
     static class FactoryWithSchema extends JsonFactory
     {
         @Override
@@ -37,11 +36,11 @@ public class TestFormatSchema extends BaseMapTest
         public boolean canUseSchema(FormatSchema schema) {
             return (schema instanceof MySchema);
         }
-        
+
         private static final long serialVersionUID = 1L;
         @Override
         protected JsonParser _createParser(Reader r, IOContext ctxt)
-            throws IOException, JsonParseException
+            throws IOException
         {
             return new ParserWithSchema(ctxt, _parserFeatures);
         }
@@ -58,12 +57,12 @@ public class TestFormatSchema extends BaseMapTest
     static class SchemaException extends RuntimeException
     {
         public final FormatSchema _schema;
-        
+
         public SchemaException(FormatSchema s) {
             _schema = s;
         }
     }
-    
+
     static class ParserWithSchema extends ParserBase
     {
         public ParserWithSchema(IOContext ioCtxt, int features)
@@ -77,7 +76,7 @@ public class TestFormatSchema extends BaseMapTest
         }
 
         @Override
-        protected void _finishString() throws IOException, JsonParseException { }
+        protected void _finishString() throws IOException { }
 
         @Override
         public byte[] getBinaryValue(Base64Variant b64variant) {
@@ -90,7 +89,7 @@ public class TestFormatSchema extends BaseMapTest
         }
 
         @Override
-        public String getText() throws IOException, JsonParseException {
+        public String getText() throws IOException {
             return null;
         }
 
@@ -100,17 +99,17 @@ public class TestFormatSchema extends BaseMapTest
         }
 
         @Override
-        public int getTextLength() throws IOException, JsonParseException {
+        public int getTextLength() throws IOException {
             return 0;
         }
 
         @Override
-        public int getTextOffset() throws IOException, JsonParseException {
+        public int getTextOffset() throws IOException {
             return 0;
         }
 
         @Override
-        public JsonToken nextToken() throws IOException, JsonParseException {
+        public JsonToken nextToken() throws IOException {
             return null;
         }
 
@@ -121,11 +120,6 @@ public class TestFormatSchema extends BaseMapTest
 
         @Override
         public void setCodec(ObjectCodec c) { }
-
-        @Override
-        protected boolean loadMore() throws IOException {
-            return false;
-        }
 
         @Override
         protected void _closeInput() throws IOException {
@@ -169,7 +163,7 @@ public class TestFormatSchema extends BaseMapTest
         public void writeFieldName(String name) throws IOException { }
 
         @Override
-        public void writeNull() throws IOException, JsonGenerationException { }
+        public void writeNull() throws IOException { }
 
         @Override
         public void writeNumber(short v) throws IOException { }
@@ -223,7 +217,7 @@ public class TestFormatSchema extends BaseMapTest
         public void writeStartArray() { }
 
         @Override
-        public void writeEndArray() throws IOException, JsonGenerationException { }
+        public void writeEndArray() throws IOException { }
 
         @Override
         public void writeStartObject() { }
@@ -236,13 +230,13 @@ public class TestFormatSchema extends BaseMapTest
             return -1;
         }
     }
-    
+
     /*
     /**********************************************************************
     /* Unit tests
     /**********************************************************************
      */
-    
+
     public void testFormatForParsers() throws Exception
     {
         ObjectMapper mapper = new ObjectMapper(new FactoryWithSchema());

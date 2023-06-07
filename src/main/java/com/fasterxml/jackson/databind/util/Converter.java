@@ -13,9 +13,10 @@ import com.fasterxml.jackson.databind.type.TypeFactory;
  *
  * @param <IN> Type of values converter takes
  * @param <OUT> Result type from conversion
- * 
+ *
  * @see com.fasterxml.jackson.databind.ser.std.StdDelegatingSerializer
- * 
+ * @see com.fasterxml.jackson.databind.deser.std.StdDelegatingDeserializer
+ *
  * @since 2.1
  */
 public interface Converter<IN,OUT>
@@ -29,8 +30,8 @@ public interface Converter<IN,OUT>
      * Method that can be used to find out actual input (source) type; this
      * usually can be determined from type parameters, but may need
      * to be implemented differently from programmatically defined
-     * converters (which can not change static type parameter bindings).
-     * 
+     * converters (which cannot change static type parameter bindings).
+     *
      * @since 2.2
      */
     public JavaType getInputType(TypeFactory typeFactory);
@@ -39,12 +40,12 @@ public interface Converter<IN,OUT>
      * Method that can be used to find out actual output (target) type; this
      * usually can be determined from type parameters, but may need
      * to be implemented differently from programmatically defined
-     * converters (which can not change static type parameter bindings).
-     * 
+     * converters (which cannot change static type parameter bindings).
+     *
      * @since 2.2
      */
     public JavaType getOutputType(TypeFactory typeFactory);
-    
+
     /*
     /**********************************************************
     /* Helper class(es)
@@ -58,7 +59,7 @@ public interface Converter<IN,OUT>
      * Specifically, this class is to be used as the marker for
      * annotation {@link com.fasterxml.jackson.databind.annotation.JsonSerialize},
      * property <code>converter</code> (and related)
-     * 
+     *
      * @since 2.2
      */
     public abstract static class None

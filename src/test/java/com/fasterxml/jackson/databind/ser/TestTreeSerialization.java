@@ -22,7 +22,7 @@ public class TestTreeSerialization
     }
 
     @SuppressWarnings("unchecked")
-	public void testSimpleViaObjectMapper()
+    public void testSimpleViaObjectMapper()
         throws IOException
     {
         ObjectMapper mapper = new ObjectMapper();
@@ -33,17 +33,19 @@ public class TestTreeSerialization
         ObjectNode n2 = n.putObject("ob");
         n2.putArray("arr");
         StringWriter sw = new StringWriter();
-        JsonGenerator jg = mapper.getFactory().createGenerator(sw);
+        JsonGenerator jg = mapper.createGenerator(sw);
         mapper.writeTree(jg, n);
 
         Map<String,Object> result = (Map<String,Object>) mapper.readValue(sw.toString(), Map.class);
-
         assertEquals(3, result.size());
         assertEquals("abc", result.get("string"));
         assertEquals(Integer.valueOf(15), result.get("number"));
         Map<String,Object> ob = (Map<String,Object>) result.get("ob");
         assertEquals(1, ob.size());
         List<Object> list = (List<Object>) ob.get("arr");
+        if (list == null) {
+            fail("Missing entry 'arr': "+ob);
+        }
         assertEquals(0, list.size());
         jg.close();
     }
@@ -61,7 +63,7 @@ public class TestTreeSerialization
         ObjectNode n = mapper.getNodeFactory().objectNode();
         n.set("pojo", mapper.getNodeFactory().pojoNode("abc"));
         StringWriter sw = new StringWriter();
-        JsonGenerator jg = mapper.getFactory().createGenerator(sw);
+        JsonGenerator jg = mapper.createGenerator(sw);
         mapper.writeTree(jg, n);
         Map<String,Object> result = (Map<String,Object>) mapper.readValue(sw.toString(), Map.class);
         assertEquals(1, result.size());
@@ -77,7 +79,7 @@ public class TestTreeSerialization
         ObjectNode n = mapper.getNodeFactory().objectNode();
         n.set("pojo", mapper.getNodeFactory().pojoNode(new int[] { 1, 2, 3 }));
         StringWriter sw = new StringWriter();
-        JsonGenerator jg = mapper.getFactory().createGenerator(sw);
+        JsonGenerator jg = mapper.createGenerator(sw);
         mapper.writeTree(jg, n);
 
         Map<String,Object> result = (Map<String,Object>) mapper.readValue(sw.toString(), Map.class);
@@ -101,7 +103,7 @@ public class TestTreeSerialization
         ObjectNode n = mapper.getNodeFactory().objectNode();
         n.set("pojo", mapper.getNodeFactory().pojoNode(new Bean()));
         StringWriter sw = new StringWriter();
-        JsonGenerator jg = mapper.getFactory().createGenerator(sw);
+        JsonGenerator jg = mapper.createGenerator(sw);
         mapper.writeTree(jg, n);
 
         Map<String,Object> result = (Map<String,Object>) mapper.readValue(sw.toString(), Map.class);

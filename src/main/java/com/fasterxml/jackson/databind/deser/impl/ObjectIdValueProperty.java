@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.lang.annotation.Annotation;
 
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.deser.*;
 import com.fasterxml.jackson.databind.introspect.AnnotatedMember;
@@ -28,9 +29,10 @@ public final class ObjectIdValueProperty
         _objectIdReader = objectIdReader;
     }
 
-    protected ObjectIdValueProperty(ObjectIdValueProperty src, JsonDeserializer<?> deser)
+    protected ObjectIdValueProperty(ObjectIdValueProperty src, JsonDeserializer<?> deser,
+            NullValueProvider nva)
     {
-        super(src, deser);
+        super(src, deser, nva);
         _objectIdReader = src._objectIdReader;
     }
 
@@ -40,17 +42,27 @@ public final class ObjectIdValueProperty
     }
 
     @Override
-    public ObjectIdValueProperty withName(PropertyName newName) {
+    public SettableBeanProperty withName(PropertyName newName) {
         return new ObjectIdValueProperty(this, newName);
     }
 
     @Override
-    public ObjectIdValueProperty withValueDeserializer(JsonDeserializer<?> deser) {
-        return new ObjectIdValueProperty(this, deser);
+    public SettableBeanProperty withValueDeserializer(JsonDeserializer<?> deser) {
+        if (_valueDeserializer == deser) {
+            return this;
+        }
+        // 07-May-2019, tatu: As per [databind#2303], must keep VD/NVP in-sync if they were
+        NullValueProvider nvp = (_valueDeserializer == _nullProvider) ? deser : _nullProvider;
+        return new ObjectIdValueProperty(this, deser, nvp);
     }
-    
+
+    @Override
+    public SettableBeanProperty withNullProvider(NullValueProvider nva) {
+        return new ObjectIdValueProperty(this, _valueDeserializer, nva);
+    }
+
     // // // BeanProperty impl
-    
+
     @Override
     public <A extends Annotation> A getAnnotation(Class<A> acls) {
         return null;
@@ -75,17 +87,16 @@ public final class ObjectIdValueProperty
     public Object deserializeSetAndReturn(JsonParser p,
     		DeserializationContext ctxt, Object instance) throws IOException
     {
-        // note: no null checks (unlike usually); deserializer should fail if one found
-        Object id = _valueDeserializer.deserialize(p, ctxt);
-
         /* 02-Apr-2015, tatu: Actually, as per [databind#742], let it be;
          *  missing or null id is needed for some cases, such as cases where id
          *  will be generated externally, at a later point, and is not available
          *  quite yet. Typical use case is with DB inserts.
          */
-        if (id == null) {
+        // note: no null checks (unlike usually); deserializer should fail if one found
+        if (p.hasToken(JsonToken.VALUE_NULL)) {
             return null;
         }
+        Object id = _valueDeserializer.deserialize(p, ctxt);
         ReadableObjectId roid = ctxt.findObjectId(id, _objectIdReader.generator, _objectIdReader.resolver);
         roid.bindItem(instance);
         // also: may need to set a property value as well

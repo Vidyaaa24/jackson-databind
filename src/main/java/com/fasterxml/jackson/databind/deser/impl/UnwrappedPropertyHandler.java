@@ -49,17 +49,17 @@ public class UnwrappedPropertyHandler
         }
         return new UnwrappedPropertyHandler(newProps);
     }
-    
+
     @SuppressWarnings("resource")
-    public Object processUnwrapped(JsonParser originalParser, DeserializationContext ctxt, Object bean,
-            TokenBuffer buffered)
-        throws IOException, JsonProcessingException
+    public Object processUnwrapped(JsonParser originalParser, DeserializationContext ctxt,
+            Object bean, TokenBuffer buffered)
+        throws IOException
     {
         for (int i = 0, len = _properties.size(); i < len; ++i) {
             SettableBeanProperty prop = _properties.get(i);
-            JsonParser jp = buffered.asParser();
-            jp.nextToken();
-            prop.deserializeAndSet(jp, ctxt, bean);
+            JsonParser p = buffered.asParser(originalParser.streamReadConstraints());
+            p.nextToken();
+            prop.deserializeAndSet(p, ctxt, bean);
         }
         return bean;
     }

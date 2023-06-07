@@ -2,14 +2,17 @@ package com.fasterxml.jackson.databind.ser.impl;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
+import java.util.Objects;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+
 import com.fasterxml.jackson.core.JsonGenerator;
+
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JacksonStdImpl;
 import com.fasterxml.jackson.databind.introspect.AnnotatedMember;
-import com.fasterxml.jackson.databind.jsonFormatVisitors.JsonFormatVisitorWrapper;
 import com.fasterxml.jackson.databind.jsonFormatVisitors.JsonFormatTypes;
+import com.fasterxml.jackson.databind.jsonFormatVisitors.JsonFormatVisitorWrapper;
 import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
 import com.fasterxml.jackson.databind.ser.ContainerSerializer;
 import com.fasterxml.jackson.databind.ser.ContextualSerializer;
@@ -28,6 +31,7 @@ public class StringArraySerializer
     /* Note: not clean in general, but we are betting against
      * anyone re-defining properties of String.class here...
      */
+    @SuppressWarnings("deprecation")
     private final static JavaType VALUE_TYPE = TypeFactory.defaultInstance().uncheckedSimpleType(String.class);
 
     public final static StringArraySerializer instance = new StringArraySerializer();
@@ -43,7 +47,7 @@ public class StringArraySerializer
     /* Life-cycle
     /**********************************************************
      */
-    
+
     protected StringArraySerializer() {
         super(String[].class);
         _elementSerializer = null;
@@ -75,7 +79,7 @@ public class StringArraySerializer
     /* Post-processing
     /**********************************************************
      */
-    
+
     @Override
     public JsonSerializer<?> createContextual(SerializerProvider provider,
             BeanProperty property)
@@ -106,18 +110,16 @@ public class StringArraySerializer
             ser = _elementSerializer;
         }
         // May have a content converter
-        ser = findConvertingContentSerializer(provider, property, ser);
+        ser = findContextualConvertingSerializer(provider, property, ser);
         if (ser == null) {
-            ser = provider.findValueSerializer(String.class, property);
-        } else {
-            ser = provider.handleSecondaryContextualization(ser, property);
+            ser = provider.findContentValueSerializer(String.class, property);
         }
         // Optimization: default serializer just writes String, so we can avoid a call:
         if (isDefaultSerializer(ser)) {
             ser = null;
         }
         // note: will never have TypeSerializer, because Strings are "natural" type
-        if ((ser == _elementSerializer) && (unwrapSingle == _unwrapSingle)) {
+        if ((ser == _elementSerializer) && (Objects.equals(unwrapSingle, _unwrapSingle))) {
             return this;
         }
         return new StringArraySerializer(this, property, ser, unwrapSingle);
@@ -138,23 +140,23 @@ public class StringArraySerializer
     public JsonSerializer<?> getContentSerializer() {
         return _elementSerializer;
     }
-    
+
     @Override
     public boolean isEmpty(SerializerProvider prov, String[] value) {
-        return (value == null) || (value.length == 0);
+        return (value.length == 0);
     }
 
     @Override
     public boolean hasSingleElement(String[] value) {
         return (value.length == 1);
     }
-    
+
     /*
     /**********************************************************
     /* Actual serialization
     /**********************************************************
      */
-    
+
     @Override
     public final void serialize(String[] value, JsonGenerator gen, SerializerProvider provider)
         throws IOException
@@ -168,11 +170,11 @@ public class StringArraySerializer
                 return;
             }
         }
-        gen.writeStartArray(len);
+        gen.writeStartArray(value, len);
         serializeContents(value, gen, provider);
         gen.writeEndArray();
     }
-    
+
     @Override
     public void serializeContents(String[] value, JsonGenerator gen, SerializerProvider provider)
         throws IOException
@@ -208,11 +210,15 @@ public class StringArraySerializer
         }
     }
 
+    /**
+     * @deprecated Since 2.15
+     */
+    @Deprecated
     @Override
     public JsonNode getSchema(SerializerProvider provider, Type typeHint) {
         return createSchemaNode("array", true).set("items", createSchemaNode("string"));
     }
-    
+
     @Override
     public void acceptJsonFormatVisitor(JsonFormatVisitorWrapper visitor, JavaType typeHint) throws JsonMappingException
     {

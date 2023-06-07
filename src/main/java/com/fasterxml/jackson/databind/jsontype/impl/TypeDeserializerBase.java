@@ -5,12 +5,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
 import com.fasterxml.jackson.core.*;
-import com.fasterxml.jackson.databind.BeanProperty;
-import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.databind.JsonDeserializer;
+
+import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.deser.std.NullifyingDeserializer;
 import com.fasterxml.jackson.databind.jsontype.TypeDeserializer;
 import com.fasterxml.jackson.databind.jsontype.TypeIdResolver;
@@ -24,9 +22,9 @@ public abstract class TypeDeserializerBase
     implements java.io.Serializable
 {
     private static final long serialVersionUID = 1;
-    
+
     protected final TypeIdResolver _idResolver;
-    
+
     protected final JavaType _baseType;
 
     /**
@@ -40,7 +38,7 @@ public abstract class TypeDeserializerBase
 
     /**
      * Type to use as the default implementation, if type id is
-     * missing or can not be resolved.
+     * missing or cannot be resolved.
      */
     protected final JavaType _defaultImpl;
 
@@ -49,9 +47,9 @@ public abstract class TypeDeserializerBase
      * in cases where type id is to be exposed as part of JSON.
      */
     protected final String _typePropertyName;
-    
+
     protected final boolean _typeIdVisible;
-    
+
     /**
      * For efficient operation we will lazily build mappings from type ids
      * to actual deserializers, once needed.
@@ -66,28 +64,19 @@ public abstract class TypeDeserializerBase
     /**********************************************************
      */
 
+    /**
+     * @since 2.8
+     */
     protected TypeDeserializerBase(JavaType baseType, TypeIdResolver idRes,
-            String typePropertyName, boolean typeIdVisible, Class<?> defaultImpl)
+            String typePropertyName, boolean typeIdVisible, JavaType defaultImpl)
     {
         _baseType = baseType;
         _idResolver = idRes;
-        // 22-Dec-2015, tatu: as per [databind#1055], avoid NPE
-        _typePropertyName = (typePropertyName == null) ? "" : typePropertyName;
+        _typePropertyName = ClassUtil.nonNullString(typePropertyName);
         _typeIdVisible = typeIdVisible;
         // defaults are fine, although shouldn't need much concurrency
         _deserializers = new ConcurrentHashMap<String, JsonDeserializer<Object>>(16, 0.75f, 2);
-        if (defaultImpl == null) {
-            _defaultImpl = null;
-        } else {
-            /* 16-Oct-2011, tatu: should call this via TypeFactory; this is
-             *    not entirely safe... however, since Collections/Maps are
-             *    seldom (if ever) base types, may be ok.
-             */
-            // 01-Nov-2015, tatu: Actually this is still exactly wrong. Should fix.
-            // 15-Jan-2016, tatu: ... as witnessed by [databind#1083], patched, but
-            //     fundamentally this call can't be made to work for all cases
-            _defaultImpl = baseType.forcedNarrowBy(defaultImpl);
-        }
+        _defaultImpl = defaultImpl;
         _property = null;
     }
 
@@ -111,7 +100,7 @@ public abstract class TypeDeserializerBase
     /* Accessors
     /**********************************************************
      */
-    
+
     @Override
     public abstract JsonTypeInfo.As getTypeInclusion();
 
@@ -119,15 +108,27 @@ public abstract class TypeDeserializerBase
 
     @Override
     public final String getPropertyName() { return _typePropertyName; }
-    
-    @Override    
+
+    @Override
     public TypeIdResolver getTypeIdResolver() { return _idResolver; }
 
-    @Override    
+    @Override
     public Class<?> getDefaultImpl() {
-        return (_defaultImpl == null) ? null : _defaultImpl.getRawClass();
+        return ClassUtil.rawClass(_defaultImpl);
     }
-    
+
+    @Override
+    public boolean hasDefaultImpl() {
+        return (_defaultImpl != null);
+    }
+
+    /**
+     * @since 2.9
+     */
+    public JavaType baseType() {
+        return _baseType;
+    }
+
     @Override
     public String toString()
     {
@@ -135,10 +136,10 @@ public abstract class TypeDeserializerBase
         sb.append('[').append(getClass().getName());
         sb.append("; base-type:").append(_baseType);
         sb.append("; id-resolver: ").append(_idResolver);
-    	    sb.append(']');
-    	    return sb.toString();
+        sb.append(']');
+        return sb.toString();
     }
-    
+
     /*
     /**********************************************************
     /* Helper methods for sub-classes
@@ -150,24 +151,31 @@ public abstract class TypeDeserializerBase
     {
         JsonDeserializer<Object> deser = _deserializers.get(typeId);
         if (deser == null) {
-            /* As per [Databind#305], need to provide contextual info. But for
+            /* As per [databind#305], need to provide contextual info. But for
              * backwards compatibility, let's start by only supporting this
              * for base class, not via interface. Later on we can add this
              * to the interface, assuming deprecation at base class helps.
              */
             JavaType type = _idResolver.typeFromId(ctxt, typeId);
             if (type == null) {
-                // As per [JACKSON-614], use the default impl if no type id available:
+                // use the default impl if no type id available:
                 deser = _findDefaultImplDeserializer(ctxt);
                 if (deser == null) {
-                    deser = _handleUnknownTypeId(ctxt, typeId, _idResolver, _baseType);
+                    // 10-May-2016, tatu: We may get some help...
+                    JavaType actual = _handleUnknownTypeId(ctxt, typeId);
+                    if (actual == null) { // what should this be taken to mean?
+                        // 17-Jan-2019, tatu: As per [databind#2221], better NOT return `null` but...
+                        return NullifyingDeserializer.instance;
+                    }
+                    // ... would this actually work?
+                    deser = ctxt.findContextualValueDeserializer(actual, _property);
                 }
             } else {
                 /* 16-Dec-2010, tatu: Since nominal type we get here has no (generic) type parameters,
                  *   we actually now need to explicitly narrow from base type (which may have parameterization)
                  *   using raw type.
                  *
-                 *   One complication, though; can not change 'type class' (simple type to container); otherwise
+                 *   One complication, though; cannot change 'type class' (simple type to container); otherwise
                  *   we may try to narrow a SimpleType (Object.class) into MapType (Map.class), losing actual
                  *   type in process (getting SimpleType of Map.class which will not work as expected)
                  */
@@ -178,7 +186,19 @@ public abstract class TypeDeserializerBase
                      *   important for some reason?
                      *   Disabling the check will break 2 Enum-related tests.
                      */
-                    type = ctxt.getTypeFactory().constructSpecializedType(_baseType, type.getRawClass());
+                    // 19-Jun-2016, tatu: As per [databind#1270] we may actually get full
+                    //   generic type with custom type resolvers. If so, should try to retain them.
+                    //  Whether this is sufficient to avoid problems remains to be seen, but for
+                    //  now it should improve things.
+                    if (!type.hasGenericTypes()) {
+                        try { // [databind#2668]: Should not expose generic RTEs
+                            type = ctxt.constructSpecializedType(_baseType, type.getRawClass());
+                        } catch (IllegalArgumentException e) {
+                            // 29-Mar-2020, tatu: I hope this is not misleading for other cases, but
+                            //   for [databind#2668] seems reasonable
+                            throw ctxt.invalidTypeIdException(_baseType, typeId, e.getMessage());
+                        }
+                    }
                 }
                 deser = ctxt.findContextualValueDeserializer(type, _property);
             }
@@ -189,10 +209,9 @@ public abstract class TypeDeserializerBase
 
     protected final JsonDeserializer<Object> _findDefaultImplDeserializer(DeserializationContext ctxt) throws IOException
     {
-        /* 06-Feb-2013, tatu: As per [databind#148], consider default implementation value of
-         *   {@link java.lang.Void} to mean "serialize as null"; as well as DeserializationFeature
-         *   to do swift mapping to null
-         */
+        // 06-Feb-2013, tatu: As per [databind#148], consider default implementation value of
+        //   {@link java.lang.Void} to mean "serialize as null"; as well as DeserializationFeature
+        //   to do swift mapping to null
         if (_defaultImpl == null) {
             if (!ctxt.isEnabled(DeserializationFeature.FAIL_ON_INVALID_SUBTYPE)) {
                 return NullifyingDeserializer.instance;
@@ -203,7 +222,7 @@ public abstract class TypeDeserializerBase
         if (ClassUtil.isBogusClass(raw)) {
             return NullifyingDeserializer.instance;
         }
-        
+
         synchronized (_defaultImpl) {
             if (_defaultImplDeserializer == null) {
                 _defaultImplDeserializer = ctxt.findContextualValueDeserializer(
@@ -217,7 +236,7 @@ public abstract class TypeDeserializerBase
      * Helper method called when {@link JsonParser} indicates that it can use
      * so-called native type ids. Assumption from there is that only native
      * type ids are to be used.
-     * 
+     *
      * @since 2.3
      */
     @Deprecated
@@ -228,30 +247,30 @@ public abstract class TypeDeserializerBase
     /**
      * Helper method called when {@link JsonParser} indicates that it can use
      * so-called native type ids, and such type id has been found.
-     * 
+     *
      * @since 2.4
      */
-    protected Object _deserializeWithNativeTypeId(JsonParser jp, DeserializationContext ctxt, Object typeId)
+    protected Object _deserializeWithNativeTypeId(JsonParser p, DeserializationContext ctxt, Object typeId)
         throws IOException
     {
         JsonDeserializer<Object> deser;
         if (typeId == null) {
-            /* 04-May-2014, tatu: Should error be obligatory, or should there be another method
-             *   for "try to deserialize with native tpye id"?
-             */
+            // 04-May-2014, tatu: Should error be obligatory, or should there be another method
+            //   for "try to deserialize with native type id"?
             deser = _findDefaultImplDeserializer(ctxt);
             if (deser == null) {
-                throw ctxt.mappingException("No (native) type id found when one was expected for polymorphic type handling");
+                return ctxt.reportInputMismatch(baseType(),
+                        "No (native) type id found when one was expected for polymorphic type handling");
             }
         } else {
             String typeIdStr = (typeId instanceof String) ? (String) typeId : String.valueOf(typeId);
             deser = _findDeserializer(ctxt, typeIdStr);
         }
-        return deser.deserialize(jp, ctxt);
+        return deser.deserialize(p, ctxt);
     }
 
     /**
-     * Helper method called when given type id can not be resolved into 
+     * Helper method called when given type id cannot be resolved into
      * concrete deserializer either directly (using given {@link  TypeIdResolver}),
      * or using default type.
      * Default implementation simply throws a {@link com.fasterxml.jackson.databind.JsonMappingException} to
@@ -261,23 +280,30 @@ public abstract class TypeDeserializerBase
      *   should return that deserializer; otherwise throw an exception to indicate
      *   the problem.
      *
-     * @since 2.5
+     * @since 2.8
      */
-    protected JsonDeserializer<Object> _handleUnknownTypeId(DeserializationContext ctxt, String typeId,
-            TypeIdResolver idResolver, JavaType baseType)
+    protected JavaType _handleUnknownTypeId(DeserializationContext ctxt, String typeId)
         throws IOException
     {
-        String extraDesc;
-        if (idResolver instanceof TypeIdResolverBase) {
-            extraDesc = ((TypeIdResolverBase) idResolver).getDescForKnownTypeIds();
-            if (extraDesc == null) {
-                extraDesc = "known type ids are not statically known";
-            } else {
-                extraDesc = "known type ids = " + extraDesc;
-            }
+        String extraDesc = _idResolver.getDescForKnownTypeIds();
+        if (extraDesc == null) {
+            extraDesc = "type ids are not statically known";
         } else {
-            extraDesc = null;
+            extraDesc = "known type ids = " + extraDesc;
         }
-        throw ctxt.unknownTypeException(_baseType, typeId, extraDesc);
+        if (_property != null) {
+            extraDesc = String.format("%s (for POJO property '%s')", extraDesc,
+                    _property.getName());
+        }
+        return ctxt.handleUnknownTypeId(_baseType, typeId, _idResolver, extraDesc);
+    }
+
+    /**
+     * @since 2.9
+     */
+    protected JavaType _handleMissingTypeId(DeserializationContext ctxt, String extraDesc)
+        throws IOException
+    {
+        return ctxt.handleMissingTypeId(_baseType, _idResolver, extraDesc);
     }
 }

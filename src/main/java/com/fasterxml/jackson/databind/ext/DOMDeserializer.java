@@ -2,7 +2,10 @@ package com.fasterxml.jackson.databind.ext;
 
 import java.io.StringReader;
 
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
@@ -20,11 +23,28 @@ public abstract class DOMDeserializer<T> extends FromStringDeserializer<T>
 {
     private static final long serialVersionUID = 1L;
 
-    private final static DocumentBuilderFactory _parserFactory;
+    private final static DocumentBuilderFactory DEFAULT_PARSER_FACTORY;
     static {
-        _parserFactory = DocumentBuilderFactory.newInstance();
+        DocumentBuilderFactory parserFactory = DocumentBuilderFactory.newInstance();
         // yup, only cave men do XML without recognizing namespaces...
-        _parserFactory.setNamespaceAware(true);
+        parserFactory.setNamespaceAware(true);
+        // [databind#1279]: make sure external entities NOT expanded by default
+        parserFactory.setExpandEntityReferences(false);
+        // ... and in general, aim for "safety"
+        try {
+            parserFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        } catch(ParserConfigurationException pce) {
+            // not much point to do anything; could log but...
+        }
+
+        // [databind#2589] add two more settings just in case
+        try {
+            parserFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        } catch (Exception t) { } // as per previous one, nothing much to do
+        try {
+            parserFactory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        } catch (Exception t) { } // as per previous one, nothing much to do
+        DEFAULT_PARSER_FACTORY = parserFactory;
     }
 
     protected DOMDeserializer(Class<T> cls) { super(cls); }
@@ -34,10 +54,20 @@ public abstract class DOMDeserializer<T> extends FromStringDeserializer<T>
 
     protected final Document parse(String value) throws IllegalArgumentException {
         try {
-            return _parserFactory.newDocumentBuilder().parse(new InputSource(new StringReader(value)));
+            return documentBuilder().parse(new InputSource(new StringReader(value)));
         } catch (Exception e) {
             throw new IllegalArgumentException("Failed to parse JSON String as XML: "+e.getMessage(), e);
         }
+    }
+
+    /**
+     * Overridable factory method used to create {@link DocumentBuilder} for parsing
+     * XML as DOM.
+     *
+     * @since 2.7.6
+     */
+    protected DocumentBuilder documentBuilder() throws ParserConfigurationException {
+        return DEFAULT_PARSER_FACTORY.newDocumentBuilder();
     }
 
     /*
@@ -45,7 +75,7 @@ public abstract class DOMDeserializer<T> extends FromStringDeserializer<T>
     /* Concrete deserializers
     /**********************************************************
      */
-    
+
     public static class NodeDeserializer extends DOMDeserializer<Node> {
         private static final long serialVersionUID = 1L;
         public NodeDeserializer() { super(Node.class); }
@@ -53,7 +83,7 @@ public abstract class DOMDeserializer<T> extends FromStringDeserializer<T>
         public Node _deserialize(String value, DeserializationContext ctxt) throws IllegalArgumentException {
             return parse(value);
         }
-    }    
+    }
 
     public static class DocumentDeserializer extends DOMDeserializer<Document> {
         private static final long serialVersionUID = 1L;
@@ -62,5 +92,5 @@ public abstract class DOMDeserializer<T> extends FromStringDeserializer<T>
         public Document _deserialize(String value, DeserializationContext ctxt) throws IllegalArgumentException {
             return parse(value);
         }
-    }    
+    }
 }

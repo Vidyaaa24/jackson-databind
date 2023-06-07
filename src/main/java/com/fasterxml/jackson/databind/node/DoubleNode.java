@@ -13,12 +13,13 @@ import com.fasterxml.jackson.databind.SerializerProvider;
  * Numeric node that contains 64-bit ("double precision")
  * floating point values simple 32-bit integer values.
  */
+@SuppressWarnings("serial")
 public class DoubleNode
     extends NumericNode
 {
     protected final double _value;
 
-    /* 
+    /*
     /**********************************************************
     /* Construction
     /**********************************************************
@@ -28,7 +29,7 @@ public class DoubleNode
 
     public static DoubleNode valueOf(double v) { return new DoubleNode(v); }
 
-    /* 
+    /*
     /**********************************************************
     /* BaseJsonNode extended API
     /**********************************************************
@@ -39,7 +40,7 @@ public class DoubleNode
     @Override
     public JsonParser.NumberType numberType() { return JsonParser.NumberType.DOUBLE; }
 
-    /* 
+    /*
     /**********************************************************
     /* Overrridden JsonNode methods
     /**********************************************************
@@ -57,7 +58,13 @@ public class DoubleNode
     @Override public boolean canConvertToLong() {
         return (_value >= Long.MIN_VALUE && _value <= Long.MAX_VALUE);
     }
-    
+
+    @Override // since 2.12
+    public boolean canConvertToExactIntegral() {
+        return !Double.isNaN(_value) && !Double.isInfinite(_value)
+                && (_value == Math.rint(_value));
+    }
+
     @Override
     public Number numberValue() {
         return Double.valueOf(_value);
@@ -74,7 +81,7 @@ public class DoubleNode
 
     @Override
     public float floatValue() { return (float) _value; }
-    
+
     @Override
     public double doubleValue() { return _value; }
 
@@ -91,11 +98,15 @@ public class DoubleNode
         return NumberOutput.toString(_value);
     }
 
+    // @since 2.9
     @Override
-    public final void serialize(JsonGenerator jg, SerializerProvider provider)
-        throws IOException, JsonProcessingException
-    {
-        jg.writeNumber(_value);
+    public boolean isNaN() {
+        return Double.isNaN(_value) || Double.isInfinite(_value);
+    }
+
+    @Override
+    public final void serialize(JsonGenerator g, SerializerProvider provider) throws IOException {
+        g.writeNumber(_value);
     }
 
     @Override

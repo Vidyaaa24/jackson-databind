@@ -5,10 +5,10 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.jsonFormatVisitors.JsonFormatVisitable;
 import com.fasterxml.jackson.databind.jsonFormatVisitors.JsonFormatVisitorWrapper;
-import com.fasterxml.jackson.databind.jsonschema.SchemaAware;
 import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
 import com.fasterxml.jackson.databind.ser.ContextualSerializer;
 import com.fasterxml.jackson.databind.ser.ResolvableSerializer;
+import com.fasterxml.jackson.databind.util.ClassUtil;
 import com.fasterxml.jackson.databind.util.Converter;
 
 import java.io.IOException;
@@ -28,7 +28,7 @@ import java.lang.reflect.Type;
 public class StdDelegatingSerializer
     extends StdSerializer<Object>
     implements ContextualSerializer, ResolvableSerializer,
-        JsonFormatVisitable, SchemaAware
+        JsonFormatVisitable
 {
     protected final Converter<Object,?> _converter;
 
@@ -36,12 +36,12 @@ public class StdDelegatingSerializer
      * Fully resolved delegate type, with generic information if any available.
      */
     protected final JavaType _delegateType;
-    
+
     /**
      * Underlying serializer for type <code>T</code>.
      */
     protected final JsonSerializer<Object> _delegateSerializer;
-    
+
     /*
     /**********************************************************
     /* Life-cycle
@@ -65,7 +65,7 @@ public class StdDelegatingSerializer
         _delegateType = null;
         _delegateSerializer = null;
     }
-    
+
     @SuppressWarnings("unchecked")
     public StdDelegatingSerializer(Converter<Object,?> converter,
             JavaType delegateType, JsonSerializer<?> delegateSerializer)
@@ -83,12 +83,10 @@ public class StdDelegatingSerializer
     protected StdDelegatingSerializer withDelegate(Converter<Object,?> converter,
             JavaType delegateType, JsonSerializer<?> delegateSerializer)
     {
-        if (getClass() != StdDelegatingSerializer.class) {
-            throw new IllegalStateException("Sub-class "+getClass().getName()+" must override 'withDelegate'");
-        }
+        ClassUtil.verifyMustOverride(StdDelegatingSerializer.class, this, "withDelegate");
         return new StdDelegatingSerializer(converter, delegateType, delegateSerializer);
     }
-    
+
     /*
     /**********************************************************
     /* Contextualization
@@ -116,9 +114,8 @@ public class StdDelegatingSerializer
             if (delegateType == null) {
                 delegateType = _converter.getOutputType(provider.getTypeFactory());
             }
-            /* 02-Apr-2015, tatu: For "dynamic case", where type is only specified as
-             *    java.lang.Object (or missing generic), [databind#731]
-             */
+            // 02-Apr-2015, tatu: For "dynamic case", where type is only specified as
+            //    java.lang.Object (or missing generic), [databind#731]
             if (!delegateType.isJavaLangObject()) {
                 delSer = provider.findValueSerializer(delegateType);
             }
@@ -146,7 +143,7 @@ public class StdDelegatingSerializer
     public JsonSerializer<?> getDelegatee() {
         return _delegateSerializer;
     }
-    
+
     /*
     /**********************************************************
     /* Serialization
@@ -174,9 +171,8 @@ public class StdDelegatingSerializer
     public void serializeWithType(Object value, JsonGenerator gen, SerializerProvider provider,
             TypeSerializer typeSer) throws IOException
     {
-        /* 03-Oct-2012, tatu: This is actually unlikely to work ok... but for now,
-         *    let's give it a chance?
-         */
+        // 03-Oct-2012, tatu: This is actually unlikely to work ok... but for now,
+        //    let's give it a chance?
         Object delegateValue = convertValue(value);
         JsonSerializer<Object> ser = _delegateSerializer;
         if (ser == null) {
@@ -186,15 +182,12 @@ public class StdDelegatingSerializer
     }
 
     @Override
-    @Deprecated // since 2.5
-    public boolean isEmpty(Object value) {
-        return isEmpty(null, value);
-    }
-
-    @Override
     public boolean isEmpty(SerializerProvider prov, Object value)
     {
         Object delegateValue = convertValue(value);
+        if (delegateValue == null) {
+            return true;
+        }
         if (_delegateSerializer == null) { // best we can do for now, too costly to look up
             return (value == null);
         }
@@ -207,22 +200,32 @@ public class StdDelegatingSerializer
     /**********************************************************
      */
 
+    /**
+     * @deprecated Since 2.15
+     */
+    @Deprecated
     @Override
     public JsonNode getSchema(SerializerProvider provider, Type typeHint)
         throws JsonMappingException
     {
-        if (_delegateSerializer instanceof SchemaAware) {
-            return ((SchemaAware) _delegateSerializer).getSchema(provider, typeHint);
+        if (_delegateSerializer instanceof com.fasterxml.jackson.databind.jsonschema.SchemaAware) {
+            return ((com.fasterxml.jackson.databind.jsonschema.SchemaAware) _delegateSerializer)
+                .getSchema(provider, typeHint);
         }
         return super.getSchema(provider, typeHint);
     }
 
+    /**
+     * @deprecated Since 2.15
+     */
+    @Deprecated
     @Override
     public JsonNode getSchema(SerializerProvider provider, Type typeHint,
         boolean isOptional) throws JsonMappingException
     {
-        if (_delegateSerializer instanceof SchemaAware) {
-            return ((SchemaAware) _delegateSerializer).getSchema(provider, typeHint, isOptional);
+        if (_delegateSerializer instanceof com.fasterxml.jackson.databind.jsonschema.SchemaAware) {
+            return ((com.fasterxml.jackson.databind.jsonschema.SchemaAware) _delegateSerializer)
+                .getSchema(provider, typeHint, isOptional);
         }
         return super.getSchema(provider, typeHint);
     }
@@ -252,9 +255,9 @@ public class StdDelegatingSerializer
      *<P>
      * The default implementation uses configured {@link Converter} to do
      * conversion.
-     * 
+     *
      * @param value Value to convert
-     * 
+     *
      * @return Result of conversion
      */
     protected Object convertValue(Object value) {

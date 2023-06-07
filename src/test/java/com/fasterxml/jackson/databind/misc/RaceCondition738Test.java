@@ -39,7 +39,7 @@ public class RaceCondition738Test extends BaseMapTest
     static class Wrapper {
         private final HasSubTypes hasSubTypes;
 
-        private Wrapper(HasSubTypes hasSubTypes) {
+        Wrapper(HasSubTypes hasSubTypes) {
             this.hasSubTypes = hasSubTypes;
         }
 
@@ -48,22 +48,22 @@ public class RaceCondition738Test extends BaseMapTest
             return hasSubTypes;
         }
     }
-    
+
     /*
     /**********************************************************
     /* Test methods
     /**********************************************************
      */
-    
+
     public void testRepeatedly() throws Exception {
-        final int COUNT = 2000;
+        final int COUNT = 3000;
         for (int i = 0; i < COUNT; i++) {
             runOnce(i, COUNT);
         }
     }
-    
+
     void runOnce(int round, int max) throws Exception {
-        final ObjectMapper mapper = getObjectMapper();
+        final ObjectMapper mapper = newJsonMapper();
         Callable<String> writeJson = new Callable<String>() {
             @Override
             public String call() throws Exception {
@@ -91,9 +91,5 @@ public class RaceCondition738Test extends BaseMapTest
                 throw new IllegalStateException("Round #"+round+"/"+max+" ; missing property 'one', source: "+json);
             }
         }
-    }
-
-    private static ObjectMapper getObjectMapper() {
-        return new ObjectMapper();
     }
 }

@@ -1,23 +1,26 @@
 package com.fasterxml.jackson.databind.node;
 
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.core.io.NumberOutput;
+import com.fasterxml.jackson.databind.SerializerProvider;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 
-import com.fasterxml.jackson.core.*;
-import com.fasterxml.jackson.databind.SerializerProvider;
-
 /**
  * <code>JsonNode</code> implementation for efficiently containing 32-bit
  * `float` values.
- * 
+ *
  * @since 2.2
  */
+@SuppressWarnings("serial")
 public class FloatNode extends NumericNode
 {
     protected final float _value;
 
-    /* 
+    /*
     /**********************************************************
     /* Construction
     /**********************************************************
@@ -27,7 +30,7 @@ public class FloatNode extends NumericNode
 
     public static FloatNode valueOf(float v) { return new FloatNode(v); }
 
-    /* 
+    /*
     /**********************************************************
     /* BaseJsonNode extended API
     /**********************************************************
@@ -38,7 +41,7 @@ public class FloatNode extends NumericNode
     @Override
     public JsonParser.NumberType numberType() { return JsonParser.NumberType.FLOAT; }
 
-    /* 
+    /*
     /**********************************************************
     /* Overrridden JsonNode methods
     /**********************************************************
@@ -57,7 +60,13 @@ public class FloatNode extends NumericNode
     @Override public boolean canConvertToLong() {
         return (_value >= Long.MIN_VALUE && _value <= Long.MAX_VALUE);
     }
-    
+
+    @Override // since 2.12
+    public boolean canConvertToExactIntegral() {
+        return !Float.isNaN(_value) && !Float.isInfinite(_value)
+                && (_value == Math.round(_value));
+    }
+
     @Override
     public Number numberValue() {
         return Float.valueOf(_value);
@@ -73,8 +82,8 @@ public class FloatNode extends NumericNode
     public long longValue() { return (long) _value; }
 
     @Override
-    public float floatValue() { return (float) _value; }
-    
+    public float floatValue() { return _value; }
+
     @Override
     public double doubleValue() { return _value; }
 
@@ -88,16 +97,19 @@ public class FloatNode extends NumericNode
 
     @Override
     public String asText() {
-        // As per [jackson-databind#707]
-//        return NumberOutput.toString(_value);
-        // TODO: in 2.7, call `NumberOutput.toString (added in 2.6); not yet for backwards compat
-        return Float.toString(_value);
+        return NumberOutput.toString(_value);
+    }
+
+    // @since 2.9
+    @Override
+    public boolean isNaN() {
+        // Java 8 will have `Float.isFinite()` to combine both checks
+        return Float.isNaN(_value) || Float.isInfinite(_value);
     }
 
     @Override
-    public final void serialize(JsonGenerator jg, SerializerProvider provider) throws IOException
-    {
-        jg.writeNumber(_value);
+    public final void serialize(JsonGenerator g, SerializerProvider provider) throws IOException {
+        g.writeNumber(_value);
     }
 
     @Override

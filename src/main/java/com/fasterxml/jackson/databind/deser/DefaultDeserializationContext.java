@@ -1,13 +1,15 @@
 package com.fasterxml.jackson.databind.deser;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.Map.Entry;
 
 import com.fasterxml.jackson.annotation.ObjectIdGenerator;
 import com.fasterxml.jackson.annotation.ObjectIdResolver;
 import com.fasterxml.jackson.annotation.ObjectIdGenerator.IdKey;
-import com.fasterxml.jackson.annotation.SimpleObjectIdResolver;
+
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.cfg.HandlerInstantiator;
 import com.fasterxml.jackson.databind.deser.impl.ReadableObjectId;
@@ -37,15 +39,21 @@ public abstract class DefaultDeserializationContext
     /**
      * Constructor that will pass specified deserializer factory and
      * cache: cache may be null (in which case default implementation
-     * will be used), factory can not be null
+     * will be used), factory cannot be null
      */
     protected DefaultDeserializationContext(DeserializerFactory df, DeserializerCache cache) {
         super(df, cache);
     }
-    
+
     protected DefaultDeserializationContext(DefaultDeserializationContext src,
-            DeserializationConfig config, JsonParser jp, InjectableValues values) {
-        super(src, config, jp, values);
+            DeserializationConfig config, JsonParser p, InjectableValues values) {
+        super(src, config, p, values);
+    }
+
+    // @since 2.12
+    protected DefaultDeserializationContext(DefaultDeserializationContext src,
+            DeserializationConfig config) {
+        super(src, config);
     }
 
     protected DefaultDeserializationContext(DefaultDeserializationContext src,
@@ -59,13 +67,13 @@ public abstract class DefaultDeserializationContext
     protected DefaultDeserializationContext(DefaultDeserializationContext src) {
         super(src);
     }
-    
+
     /**
      * Method needed to ensure that {@link ObjectMapper#copy} will work
      * properly; specifically, that caches are cleared, but settings
      * will otherwise remain identical; and that no sharing of state
      * occurs.
-     * 
+     *
      * @since 2.4.4
      */
     public DefaultDeserializationContext copy() {
@@ -81,9 +89,8 @@ public abstract class DefaultDeserializationContext
     @Override
     public ReadableObjectId findObjectId(Object id, ObjectIdGenerator<?> gen, ObjectIdResolver resolverType)
     {
-        /* 02-Apr-2015, tatu: As per [databind#742] should allow 'null', similar to how
-         *   missing id already works.
-         */
+        // 02-Apr-2015, tatu: As per [databind#742] should allow 'null', similar to how
+        //   missing id already works.
         if (id == null) {
             return null;
         }
@@ -130,7 +137,7 @@ public abstract class DefaultDeserializationContext
      * needed for {@link #tryToResolveUnresolvedObjectId}.
      * Default implementation simply constructs default {@link ReadableObjectId} with
      * given <code>key</code>.
-     * 
+     *
      * @param key The key to associate with the new ReadableObjectId
      * @return New ReadableObjectId instance
      *
@@ -138,12 +145,6 @@ public abstract class DefaultDeserializationContext
      */
     protected ReadableObjectId createReadableObjectId(IdKey key) {
         return new ReadableObjectId(key);
-    }
-
-    @Deprecated // since 2.4
-    @Override
-    public ReadableObjectId findObjectId(Object id, ObjectIdGenerator<?> gen) {
-        return findObjectId(id, gen, new SimpleObjectIdResolver());
     }
 
     @Override
@@ -167,7 +168,8 @@ public abstract class DefaultDeserializationContext
                 continue;
             }
             if (exception == null) {
-                exception = new UnresolvedForwardReference(getParser(), "Unresolved forward references for: ");
+                exception = new UnresolvedForwardReference(getParser(), "Unresolved forward references for: ")
+                        .withStackTrace();
             }
             Object key = roid.getKey().key;
             for (Iterator<Referring> iterator = roid.referringProperties(); iterator.hasNext(); ) {
@@ -194,13 +196,13 @@ public abstract class DefaultDeserializationContext
     {
         return roid.tryToResolveUnresolved(this);
     }
-    
+
     /*
     /**********************************************************
     /* Abstract methods impls, other factory methods
     /**********************************************************
      */
-    
+
     @SuppressWarnings("unchecked")
     @Override
     public JsonDeserializer<Object> deserializerInstance(Annotated ann, Object deserDef)
@@ -210,13 +212,12 @@ public abstract class DefaultDeserializationContext
             return null;
         }
         JsonDeserializer<?> deser;
-        
+
         if (deserDef instanceof JsonDeserializer) {
             deser = (JsonDeserializer<?>) deserDef;
         } else {
-            /* Alas, there's no way to force return type of "either class
-             * X or Y" -- need to throw an exception after the fact
-             */
+            // Alas, there's no way to force return type of "either class
+            // X or Y" -- need to throw an exception after the fact
             if (!(deserDef instanceof Class)) {
                 throw new IllegalStateException("AnnotationIntrospector returned deserializer definition of type "+deserDef.getClass().getName()+"; expected type JsonDeserializer or Class<JsonDeserializer> instead");
             }
@@ -251,7 +252,7 @@ public abstract class DefaultDeserializationContext
         }
 
         KeyDeserializer deser;
-        
+
         if (deserDef instanceof KeyDeserializer) {
             deser = (KeyDeserializer) deserDef;
         } else {
@@ -285,7 +286,7 @@ public abstract class DefaultDeserializationContext
 
     /*
     /**********************************************************
-    /* Extended API
+    /* Extended API, life-cycle
     /**********************************************************
      */
 
@@ -294,14 +295,77 @@ public abstract class DefaultDeserializationContext
      * with different factory
      */
     public abstract DefaultDeserializationContext with(DeserializerFactory factory);
-    
+
     /**
      * Method called to create actual usable per-deserialization
      * context instance.
      */
     public abstract DefaultDeserializationContext createInstance(
-            DeserializationConfig config, JsonParser jp, InjectableValues values);
-    
+            DeserializationConfig config, JsonParser p, InjectableValues values);
+
+    public abstract DefaultDeserializationContext createDummyInstance(
+            DeserializationConfig config);
+
+    /*
+    /**********************************************************
+    /* Extended API, read methods
+    /**********************************************************
+     */
+
+    public Object readRootValue(JsonParser p, JavaType valueType,
+            JsonDeserializer<Object> deser, Object valueToUpdate)
+        throws IOException
+    {
+        if (_config.useRootWrapping()) {
+            return _unwrapAndDeserialize(p, valueType, deser, valueToUpdate);
+        }
+        if (valueToUpdate == null) {
+            return deser.deserialize(p, this);
+        }
+        return deser.deserialize(p, this, valueToUpdate);
+    }
+
+    protected Object _unwrapAndDeserialize(JsonParser p,
+            JavaType rootType, JsonDeserializer<Object> deser,
+            Object valueToUpdate)
+        throws IOException
+    {
+        PropertyName expRootName = _config.findRootName(rootType);
+        // 12-Jun-2015, tatu: Should try to support namespaces etc but...
+        String expSimpleName = expRootName.getSimpleName();
+        if (p.currentToken() != JsonToken.START_OBJECT) {
+            reportWrongTokenException(rootType, JsonToken.START_OBJECT,
+                    "Current token not START_OBJECT (needed to unwrap root name %s), but %s",
+                    ClassUtil.name(expSimpleName), p.currentToken());
+        }
+        if (p.nextToken() != JsonToken.FIELD_NAME) {
+            reportWrongTokenException(rootType, JsonToken.FIELD_NAME,
+                    "Current token not FIELD_NAME (to contain expected root name %s), but %s",
+                    ClassUtil.name(expSimpleName), p.currentToken());
+        }
+        String actualName = p.currentName();
+        if (!expSimpleName.equals(actualName)) {
+            reportPropertyInputMismatch(rootType, actualName,
+"Root name (%s) does not match expected (%s) for type %s",
+ClassUtil.name(actualName), ClassUtil.name(expSimpleName), ClassUtil.getTypeDescription(rootType));
+        }
+        // ok, then move to value itself....
+        p.nextToken();
+        final Object result;
+        if (valueToUpdate == null) {
+            result = deser.deserialize(p, this);
+        } else {
+            result = deser.deserialize(p, this, valueToUpdate);
+        }
+        // and last, verify that we now get matching END_OBJECT
+        if (p.nextToken() != JsonToken.END_OBJECT) {
+            reportWrongTokenException(rootType, JsonToken.END_OBJECT,
+"Current token not END_OBJECT (to match wrapper object with root name %s), but %s",
+ClassUtil.name(expSimpleName), p.currentToken());
+        }
+        return result;
+    }
+
     /*
     /**********************************************************
     /* And then the concrete implementation class
@@ -323,34 +387,42 @@ public abstract class DefaultDeserializationContext
             super(df, null);
         }
 
-        protected Impl(Impl src,
-                DeserializationConfig config, JsonParser jp, InjectableValues values) {
-            super(src, config, jp, values);
+        private Impl(Impl src,
+                DeserializationConfig config, JsonParser p, InjectableValues values) {
+            super(src, config, p, values);
         }
 
-        protected Impl(Impl src) { super(src); }
-        
-        protected Impl(Impl src, DeserializerFactory factory) {
+        private Impl(Impl src) { super(src); }
+
+        private Impl(Impl src, DeserializerFactory factory) {
             super(src, factory);
+        }
+
+        private Impl(Impl src, DeserializationConfig config) {
+            super(src, config);
         }
 
         @Override
         public DefaultDeserializationContext copy() {
-            if (getClass() != Impl.class) {
-                return super.copy();
-            }
-           return new Impl(this);
+            ClassUtil.verifyMustOverride(Impl.class, this, "copy");
+            return new Impl(this);
         }
-        
+
         @Override
         public DefaultDeserializationContext createInstance(DeserializationConfig config,
-                JsonParser jp, InjectableValues values) {
-            return new Impl(this, config, jp, values);
+                JsonParser p, InjectableValues values) {
+            return new Impl(this, config, p, values);
+        }
+
+        @Override
+        public DefaultDeserializationContext createDummyInstance(DeserializationConfig config) {
+            // need to be careful to create "real", not blue-print, instance
+            return new Impl(this, config);
         }
 
         @Override
         public DefaultDeserializationContext with(DeserializerFactory factory) {
             return new Impl(this, factory);
-        }        
+        }
     }
 }

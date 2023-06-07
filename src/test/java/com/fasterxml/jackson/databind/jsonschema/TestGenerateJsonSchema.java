@@ -34,7 +34,7 @@ public class TestGenerateJsonSchema
         private Collection<Float> property4;
         @JsonProperty(required=true)
         private String property5;
-        
+
         public int getProperty1()
         {
             return property1;
@@ -74,15 +74,18 @@ public class TestGenerateJsonSchema
         {
             this.property4 = property4;
         }
-        
+
         public String getProperty5()
         {
             return property5;
         }
 
-        public void setProperty5(String property5)
-        {
+        public void setProperty5(String property5) {
             this.property5 = property5;
+        }
+
+        public long getProperty6() {
+            return 0L;
         }
     }
 
@@ -112,22 +115,22 @@ public class TestGenerateJsonSchema
         public BigDecimal dec;
         public BigInteger bigInt;
     }
-    
+
     /*
     /**********************************************************
     /* Unit tests
     /**********************************************************
      */
 
-    private final ObjectMapper MAPPER = new ObjectMapper();
-    
+    private final ObjectMapper MAPPER = newJsonMapper();
+
     /**
      * tests generating json-schema stuff.
      */
     public void testOldSchemaGeneration() throws Exception
     {
         JsonSchema jsonSchema = MAPPER.generateJsonSchema(SimpleBean.class);
-        
+
         assertNotNull(jsonSchema);
 
         // test basic equality, and that equals() handles null, other obs
@@ -162,25 +165,35 @@ public class TestGenerateJsonSchema
         assertEquals("array", property4Schema.get("type").asText());
         assertEquals(false, property4Schema.path("required").booleanValue());
         assertEquals("number", property4Schema.get("items").get("type").asText());
+
+        JsonNode property5Schema = propertiesSchema.get("property5");
+        assertNotNull(property5Schema);
+        assertEquals("string", property5Schema.get("type").asText());
+        assertEquals(true, property5Schema.path("required").booleanValue());
+
+        JsonNode property6Schema = propertiesSchema.get("property6");
+        assertNotNull(property6Schema);
+        assertEquals("integer", property6Schema.get("type").asText());
+        assertEquals(false, property6Schema.path("required").booleanValue());
     }
-    
+
     @JsonFilter("filteredBean")
     protected static class FilteredBean {
-    	
+
     	@JsonProperty
     	private String secret = "secret";
-    	
+
     	@JsonProperty
     	private String obvious = "obvious";
-    	
+
     	public String getSecret() { return secret; }
     	public void setSecret(String s) { secret = s; }
-    	
+
     	public String getObvious() { return obvious; }
     	public void setObvious(String s) {obvious = s; }
     }
-    
-    public static FilterProvider secretFilterProvider = new SimpleFilterProvider()
+
+    final static FilterProvider secretFilterProvider = new SimpleFilterProvider()
         .addFilter("filteredBean", SimpleBeanPropertyFilter.filterOutAllExcept(new String[]{"obvious"}));
 
     public void testGeneratingJsonSchemaWithFilters() throws Exception {
@@ -230,14 +243,19 @@ public class TestGenerateJsonSchema
     public void testUnwrapping()  throws Exception
     {
         JsonSchema jsonSchema = MAPPER.generateJsonSchema(UnwrappingRoot.class);
-        String json = jsonSchema.toString().replaceAll("\"", "'");
-        String EXP = "{'type':'object',"
-                +"'properties':{'age':{'type':'integer'},"
-                +"'name.first':{'type':'string'},'name.last':{'type':'string'}}}";
-        assertEquals(EXP, json);
+        ObjectNode root = jsonSchema.getSchemaNode();
+        JsonNode propertiesSchema = root.get("properties");
+        String ageType = propertiesSchema.get("age").get("type").asText();
+        String firstType = propertiesSchema.get("name.first").get("type").asText();
+        String lastType = propertiesSchema.get("name.last").get("type").asText();
+        String type = root.get("type").asText();
+        assertEquals(type, "object");
+        assertEquals(ageType, "integer");
+        assertEquals(firstType, "string");
+        assertEquals(lastType, "string");
     }
 
-    // 
+    //
     public void testNumberTypes()  throws Exception
     {
         JsonSchema jsonSchema = MAPPER.generateJsonSchema(Numbers.class);
@@ -246,5 +264,9 @@ public class TestGenerateJsonSchema
                 +"'properties':{'dec':{'type':'number'},"
                 +"'bigInt':{'type':'integer'}}}";
         assertEquals(EXP, json);
+    }
+
+    protected static String quotesToApos(String json) {
+        return json.replace("\"", "'");
     }
 }

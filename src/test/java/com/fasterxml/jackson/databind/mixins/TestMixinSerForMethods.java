@@ -6,6 +6,7 @@ import java.util.*;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.introspect.ClassIntrospector;
+import com.fasterxml.jackson.databind.introspect.SimpleMixInResolver;
 import com.fasterxml.jackson.databind.introspect.ClassIntrospector.MixInResolver;
 
 public class TestMixinSerForMethods
@@ -62,13 +63,6 @@ public class TestMixinSerForMethods
         @JsonIgnore
         public String takeB() { return null; }
     }
-               
-    interface ObjectMixIn
-    {
-        // and then ditto for hashCode..
-        @Override
-        @JsonProperty public int hashCode();
-    }
 
     static class EmptyBean { }
 
@@ -100,7 +94,7 @@ public class TestMixinSerForMethods
      */
 
     /**
-     * Unit test for verifying that leaf-level mix-ins work ok; 
+     * Unit test for verifying that leaf-level mix-ins work ok;
      * that is, any annotations added properly override all annotations
      * that masked methods (fields etc) have.
      */
@@ -154,49 +148,22 @@ public class TestMixinSerForMethods
         assertEquals(Integer.valueOf(42), result.get("x"));
     }
 
-    /**
-     * Unit test for verifying that it is actually possible to attach
-     * mix-in annotations to basic <code>Object.class</code>. This
-     * will essentially apply to any and all Objects.
-     */
-    public void testObjectMixin() throws IOException
-    {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.addMixIn(Object.class, ObjectMixIn.class);
-
-        // First, with our bean...
-        Map<String,Object> result = writeAndMap(mapper, new BaseClass("a", "b"));
-
-        assertEquals(2, result.size());
-        assertEquals("b", result.get("b"));
-        Object ob = result.get("hashCode");
-        assertNotNull(ob);
-        assertEquals(Integer.class, ob.getClass());
-
-        /* 15-Oct-2010, tatu: Actually, we now block serialization (attempts) of plain Objects, by default
-         *    (since generally that makes no sense -- may need to revisit). As such, need to comment out
-         *    this part of test
-         */
-        /* Hmmh. For plain Object.class... I suppose getClass() does
-         * get serialized (and can't really be blocked either).
-         * Fine.
-         */
-        result = writeAndMap(mapper, new BaseClass("a", "b"));
-        assertEquals(2, result.size());
-        ob = result.get("hashCode");
-        assertNotNull(ob);
-        assertEquals(Integer.class, ob.getClass());
+    public void testSimpleMixInResolverHasMixins() {
+        SimpleMixInResolver simple = new SimpleMixInResolver(null);
+        assertFalse(simple.hasMixIns());
+        simple.addLocalDefinition(String.class, Number.class);
+        assertTrue(simple.hasMixIns());
     }
 
     // [databind#688]
     public void testCustomResolver() throws IOException
     {
         ObjectMapper mapper = new ObjectMapper();
-        mapper.setMixInResolver(new ClassIntrospector.MixInResolver() {
+        MixInResolver res = new ClassIntrospector.MixInResolver() {
             @Override
             public Class<?> findMixInClassFor(Class<?> target) {
-                if (target == BaseClass.class) {
-                    return ObjectMixIn.class;
+                if (target == EmptyBean.class) {
+                    return MixInForSimple.class;
                 }
                 return null;
             }
@@ -205,11 +172,13 @@ public class TestMixinSerForMethods
             public MixInResolver copy() {
                 return this;
             }
-        });
-        Map<String,Object> result = writeAndMap(mapper, new BaseClass("c", "d"));
-        assertEquals(2, result.size());
-        assertNotNull(result.get("hashCode"));
-        assertTrue(result.containsKey("b"));
-        assertFalse(result.containsKey("a"));
+        };
+        mapper.setMixInResolver(res);
+        Map<String,Object> result = writeAndMap(mapper, new SimpleBean());
+        assertEquals(1, result.size());
+        assertEquals(Integer.valueOf(42), result.get("x"));
+
+        SimpleMixInResolver simple = new SimpleMixInResolver(res);
+        assertTrue(simple.hasMixIns());
     }
 }

@@ -16,10 +16,22 @@ public final class AnnotationMap implements Annotations
     protected HashMap<Class<?>,Annotation> _annotations;
 
     public AnnotationMap() { }
-    
-    private AnnotationMap(HashMap<Class<?>,Annotation> a) {
+
+    public static AnnotationMap of(Class<?> type, Annotation value) {
+        HashMap<Class<?>,Annotation> ann = new HashMap<>(4);
+        ann.put(type, value);
+        return new AnnotationMap(ann);
+    }
+
+    AnnotationMap(HashMap<Class<?>,Annotation> a) {
         _annotations = a;
     }
+
+    /*
+    /**********************************************************
+    /* Annotations impl
+    /**********************************************************
+     */
 
     @SuppressWarnings("unchecked")
     @Override
@@ -31,6 +43,7 @@ public final class AnnotationMap implements Annotations
         return (A) _annotations.get(cls);
     }
 
+    @Override
     public boolean has(Class<?> cls)
     {
         if (_annotations == null) {
@@ -45,6 +58,7 @@ public final class AnnotationMap implements Annotations
      *
      * @since 2.7
      */
+    @Override
     public boolean hasOneOf(Class<? extends Annotation>[] annoClasses) {
         if (_annotations != null) {
             for (int i = 0, end = annoClasses.length; i < end; ++i) {
@@ -56,6 +70,12 @@ public final class AnnotationMap implements Annotations
         return false;
     }
 
+    /*
+    /**********************************************************
+    /* Other API
+    /**********************************************************
+     */
+
     /**
      * @since 2.3
      */
@@ -65,7 +85,7 @@ public final class AnnotationMap implements Annotations
         }
         return _annotations.values();
     }
-    
+
     public static AnnotationMap merge(AnnotationMap primary, AnnotationMap secondary)
     {
         if (primary == null || primary._annotations == null || primary._annotations.isEmpty()) {
@@ -85,7 +105,7 @@ public final class AnnotationMap implements Annotations
         }
         return new AnnotationMap(annotations);
     }
-    
+
     @Override
     public int size() {
         return (_annotations == null) ? 0 : _annotations.size();
@@ -106,7 +126,7 @@ public final class AnnotationMap implements Annotations
 
     /**
      * Method called to add specified annotation in the Map.
-     * 
+     *
      * @return True if the addition changed the contents, that is, this map did not
      *   already have specified annotation
      */

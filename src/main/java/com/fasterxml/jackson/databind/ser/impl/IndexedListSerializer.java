@@ -13,7 +13,7 @@ import com.fasterxml.jackson.databind.ser.std.AsArraySerializerBase;
 /**
  * This is an optimized serializer for Lists that can be efficiently
  * traversed by index (as opposed to others, such as {@link LinkedList}
- * that can not}.
+ * that cannot}.
  */
 @JacksonStdImpl
 public final class IndexedListSerializer
@@ -45,10 +45,10 @@ public final class IndexedListSerializer
     /* Accessors
     /**********************************************************
      */
-    
+
     @Override
     public boolean isEmpty(SerializerProvider prov, List<?> value) {
-        return (value == null) || value.isEmpty();
+        return value.isEmpty();
     }
 
     @Override
@@ -58,7 +58,7 @@ public final class IndexedListSerializer
 
     @Override
     public ContainerSerializer<?> _withValueTypeSerializer(TypeSerializer vts) {
-        return new IndexedListSerializer(this, 
+        return new IndexedListSerializer(this,
                 _property, vts, _elementSerializer, _unwrapSingle);
     }
 
@@ -75,21 +75,21 @@ public final class IndexedListSerializer
                 return;
             }
         }
-        gen.writeStartArray(len);
+        gen.writeStartArray(value, len);
         serializeContents(value, gen, provider);
         gen.writeEndArray();
     }
-    
+
     @Override
-    public void serializeContents(List<?> value, JsonGenerator jgen, SerializerProvider provider)
+    public void serializeContents(List<?> value, JsonGenerator g, SerializerProvider provider)
         throws IOException
     {
         if (_elementSerializer != null) {
-            serializeContentsUsing(value, jgen, provider, _elementSerializer);
+            serializeContentsUsing(value, g, provider, _elementSerializer);
             return;
         }
         if (_valueTypeSerializer != null) {
-            serializeTypedContents(value, jgen, provider);
+            serializeTypedContents(value, g, provider);
             return;
         }
         final int len = value.size();
@@ -102,7 +102,7 @@ public final class IndexedListSerializer
             for (; i < len; ++i) {
                 Object elem = value.get(i);
                 if (elem == null) {
-                    provider.defaultSerializeNull(jgen);
+                    provider.defaultSerializeNull(g);
                 } else {
                     Class<?> cc = elem.getClass();
                     JsonSerializer<Object> serializer = serializers.serializerFor(cc);
@@ -116,14 +116,14 @@ public final class IndexedListSerializer
                         }
                         serializers = _dynamicSerializers;
                     }
-                    serializer.serialize(elem, jgen, provider);
+                    serializer.serialize(elem, g, provider);
                 }
             }
         } catch (Exception e) {
             wrapAndThrow(provider, e, value, i);
         }
     }
-    
+
     public void serializeContentsUsing(List<?> value, JsonGenerator jgen, SerializerProvider provider,
             JsonSerializer<Object> ser)
         throws IOException
@@ -182,7 +182,6 @@ public final class IndexedListSerializer
                 }
             }
         } catch (Exception e) {
-            // [JACKSON-55] Need to add reference information
             wrapAndThrow(provider, e, value, i);
         }
     }

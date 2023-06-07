@@ -6,20 +6,31 @@ import java.util.*;
 import static org.junit.Assert.*;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
+import com.fasterxml.jackson.core.*;
+
+import com.fasterxml.jackson.databind.deser.std.StdScalarDeserializer;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.ser.std.StdScalarSerializer;
 import com.fasterxml.jackson.databind.type.TypeFactory;
 
 public abstract class BaseMapTest
     extends BaseTest
 {
     private final static Object SINGLETON_OBJECT = new Object();
-    
+
     /*
     /**********************************************************
     /* Shared helper classes
     /**********************************************************
      */
+
+    public static class BogusSchema implements FormatSchema {
+        @Override
+        public String getSchemaType() {
+            return "TestFormat";
+        }
+    }
 
     /**
      * Simple wrapper around boolean types, usually to test value
@@ -28,10 +39,8 @@ public abstract class BaseMapTest
     protected static class BooleanWrapper {
         public Boolean b;
 
-        @JsonCreator
+        public BooleanWrapper() { }
         public BooleanWrapper(Boolean value) { b = value; }
-
-        @JsonValue public Boolean value() { return b; }
     }
 
     protected static class IntWrapper {
@@ -47,7 +56,21 @@ public abstract class BaseMapTest
         public LongWrapper() { }
         public LongWrapper(long value) { l = value; }
     }
-    
+
+    protected static class FloatWrapper {
+        public float f;
+
+        public FloatWrapper() { }
+        public FloatWrapper(float value) { f = value; }
+    }
+
+    protected static class DoubleWrapper {
+        public double d;
+
+        public DoubleWrapper() { }
+        public DoubleWrapper(double value) { d = value; }
+    }
+
     /**
      * Simple wrapper around String type, usually to test value
      * conversions or wrapping
@@ -62,7 +85,7 @@ public abstract class BaseMapTest
     }
 
     protected static class ObjectWrapper {
-        private final Object object;
+        final Object object;
         protected ObjectWrapper(final Object object) {
             this.object = object;
         }
@@ -89,11 +112,16 @@ public abstract class BaseMapTest
     {
         public Map<K,V> map;
 
+        public MapWrapper() { }
         public MapWrapper(Map<K,V> m) {
             map = m;
         }
+        public MapWrapper(K key, V value) {
+            map = new LinkedHashMap<>();
+            map.put(key, value);
+        }
     }
-    
+
     protected static class ArrayWrapper<T>
     {
         public T[] array;
@@ -102,7 +130,7 @@ public abstract class BaseMapTest
             array = v;
         }
     }
-    
+
     /**
      * Enumeration type with sub-classes per value.
      */
@@ -115,7 +143,68 @@ public abstract class BaseMapTest
     }
 
     public enum ABC { A, B, C; }
-    
+
+    // since 2.8
+    public static class Point {
+        public int x, y;
+
+        protected Point() { } // for deser
+        public Point(int x0, int y0) {
+            x = x0;
+            y = y0;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof Point)) {
+                return false;
+            }
+            Point other = (Point) o;
+            return (other.x == x) && (other.y == y);
+        }
+
+        @Override
+        public String toString() {
+            return String.format("[x=%d, y=%d]", x, y);
+        }
+    }
+
+    /*
+    /**********************************************************
+    /* Shared serializers
+    /**********************************************************
+     */
+
+    @SuppressWarnings("serial")
+    public static class UpperCasingSerializer extends StdScalarSerializer<String>
+    {
+        public UpperCasingSerializer() { super(String.class); }
+
+        @Override
+        public void serialize(String value, JsonGenerator gen,
+                SerializerProvider provider) throws IOException {
+            gen.writeString(value.toUpperCase());
+        }
+    }
+
+    @SuppressWarnings("serial")
+    public static class LowerCasingDeserializer extends StdScalarDeserializer<String>
+    {
+        public LowerCasingDeserializer() { super(String.class); }
+
+        @Override
+        public String deserialize(JsonParser p, DeserializationContext ctxt)
+                throws IOException {
+            return p.getText().toLowerCase();
+        }
+    }
+
+    /*
+    /**********************************************************
+    /* Construction
+    /**********************************************************
+     */
+
     protected BaseMapTest() { super(); }
 
     /*
@@ -124,22 +213,39 @@ public abstract class BaseMapTest
     /**********************************************************
      */
 
-    private final static ObjectMapper SHARED_MAPPER = new ObjectMapper();
+    private static ObjectMapper SHARED_MAPPER;
 
-    protected ObjectMapper objectMapper() {
+    protected ObjectMapper sharedMapper() {
+        if (SHARED_MAPPER == null) {
+            SHARED_MAPPER = newJsonMapper();
+        }
         return SHARED_MAPPER;
     }
-    
+
+    protected ObjectMapper objectMapper() {
+        return sharedMapper();
+    }
+
     protected ObjectWriter objectWriter() {
-        return SHARED_MAPPER.writer();
+        return sharedMapper().writer();
     }
 
     protected ObjectReader objectReader() {
-        return SHARED_MAPPER.reader();
+        return sharedMapper().reader();
     }
-    
+
     protected ObjectReader objectReader(Class<?> cls) {
-        return SHARED_MAPPER.readerFor(cls);
+        return sharedMapper().readerFor(cls);
+    }
+
+    // @since 2.10
+    protected static ObjectMapper newJsonMapper() {
+        return new JsonMapper();
+    }
+
+    // @since 2.10
+    protected static JsonMapper.Builder jsonMapperBuilder() {
+        return JsonMapper.builder();
     }
 
     // @since 2.7
@@ -147,7 +253,7 @@ public abstract class BaseMapTest
         // this is a work-around; no null modifier added
         return TypeFactory.defaultInstance().withModifier(null);
     }
-    
+
     /*
     /**********************************************************
     /* Additional assert methods
@@ -155,6 +261,11 @@ public abstract class BaseMapTest
      */
 
     protected void assertEquals(int[] exp, int[] act)
+    {
+        assertArrayEquals(exp, act);
+    }
+
+    protected void assertEquals(byte[] exp, byte[] act)
     {
         assertArrayEquals(exp, act);
     }
@@ -184,9 +295,9 @@ public abstract class BaseMapTest
         throws IOException
     {
         String str = m.writeValueAsString(value);
-        return (Map<String,Object>) m.readValue(str, Map.class);
+        return (Map<String,Object>) m.readValue(str, LinkedHashMap.class);
     }
-    
+
     protected String serializeAsString(ObjectMapper m, Object value)
         throws IOException
     {
@@ -196,13 +307,13 @@ public abstract class BaseMapTest
     protected String serializeAsString(Object value)
         throws IOException
     {
-        return serializeAsString(SHARED_MAPPER, value);
+        return serializeAsString(sharedMapper(), value);
     }
 
     protected String asJSONObjectValueString(Object... args)
         throws IOException
     {
-        return asJSONObjectValueString(SHARED_MAPPER, args);
+        return asJSONObjectValueString(sharedMapper(), args);
     }
 
     protected String asJSONObjectValueString(ObjectMapper m, Object... args)
@@ -220,11 +331,11 @@ public abstract class BaseMapTest
     /* Helper methods, deserialization
     /**********************************************************
      */
-    
+
     protected <T> T readAndMapFromString(String input, Class<T> cls)
         throws IOException
     {
-        return readAndMapFromString(SHARED_MAPPER, input, cls);
+        return readAndMapFromString(sharedMapper(), input, cls);
     }
 
     protected <T> T readAndMapFromString(ObjectMapper m, String input, Class<T> cls) throws IOException
@@ -248,13 +359,5 @@ public abstract class BaseMapTest
         } catch (IOException e) {
             throw new IllegalArgumentException(e);
         }
-    }
-
-    protected static String aposToQuotes(String json) {
-        return json.replace("'", "\"");
-    }
-
-    protected static String quotesToApos(String json) {
-        return json.replace("\"", "'");
     }
 }

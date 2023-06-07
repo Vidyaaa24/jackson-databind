@@ -4,27 +4,28 @@ import java.io.IOException;
 import java.lang.reflect.Type;
 import java.util.*;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.ObjectIdGenerator;
-import com.fasterxml.jackson.annotation.ObjectIdGenerators;
+import com.fasterxml.jackson.annotation.*;
+
 import com.fasterxml.jackson.core.*;
+import com.fasterxml.jackson.core.type.WritableTypeId;
+
 import com.fasterxml.jackson.databind.*;
-import com.fasterxml.jackson.databind.introspect.Annotated;
 import com.fasterxml.jackson.databind.introspect.AnnotatedMember;
 import com.fasterxml.jackson.databind.introspect.ObjectIdInfo;
 import com.fasterxml.jackson.databind.jsonFormatVisitors.JsonFormatVisitable;
 import com.fasterxml.jackson.databind.jsonFormatVisitors.JsonFormatVisitorWrapper;
 import com.fasterxml.jackson.databind.jsonFormatVisitors.JsonObjectFormatVisitor;
-import com.fasterxml.jackson.databind.jsonschema.JsonSerializableSchema;
-import com.fasterxml.jackson.databind.jsonschema.SchemaAware;
 import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ser.*;
+import com.fasterxml.jackson.databind.ser.impl.MapEntrySerializer;
 import com.fasterxml.jackson.databind.ser.impl.ObjectIdWriter;
 import com.fasterxml.jackson.databind.ser.impl.PropertyBasedObjectIdGenerator;
 import com.fasterxml.jackson.databind.ser.impl.WritableObjectId;
 import com.fasterxml.jackson.databind.util.ArrayBuilders;
+import com.fasterxml.jackson.databind.util.ClassUtil;
 import com.fasterxml.jackson.databind.util.Converter;
+import com.fasterxml.jackson.databind.util.IgnorePropertiesUtil;
 import com.fasterxml.jackson.databind.util.NameTransformer;
 
 /**
@@ -37,10 +38,10 @@ import com.fasterxml.jackson.databind.util.NameTransformer;
 public abstract class BeanSerializerBase
     extends StdSerializer<Object>
     implements ContextualSerializer, ResolvableSerializer,
-        JsonFormatVisitable, SchemaAware
+        JsonFormatVisitable
 {
     protected final static PropertyName NAME_FOR_OBJECT_REF = new PropertyName("#object-ref");
-    
+
     final protected static BeanPropertyWriter[] NO_PROPS = new BeanPropertyWriter[0];
 
     /*
@@ -48,6 +49,11 @@ public abstract class BeanSerializerBase
     /* Configuration
     /**********************************************************
      */
+
+    /**
+     * @since 2.9
+     */
+    final protected JavaType _beanType;
 
     /**
      * Writers used for outputting actual property values
@@ -98,7 +104,7 @@ public abstract class BeanSerializerBase
     /**
      * Constructor used by {@link BeanSerializerBuilder} to create an
      * instance
-     * 
+     *
      * @param type Nominal type of values handled by this serializer
      * @param builder Builder for accessing other collected information
      */
@@ -106,9 +112,12 @@ public abstract class BeanSerializerBase
             BeanPropertyWriter[] properties, BeanPropertyWriter[] filteredProperties)
     {
         super(type);
+        _beanType = type;
         _props = properties;
         _filteredProps = filteredProperties;
         if (builder == null) { // mostly for testing
+            // 20-Sep-2019, tatu: Actually not just that but also "dummy" serializer for
+            //     case of no bean properties, too
             _typeId = null;
             _anyGetterWriter = null;
             _propertyFilterId = null;
@@ -119,15 +128,16 @@ public abstract class BeanSerializerBase
             _anyGetterWriter = builder.getAnyGetter();
             _propertyFilterId = builder.getFilterId();
             _objectIdWriter = builder.getObjectIdWriter();
-            JsonFormat.Value format = builder.getBeanDescription().findExpectedFormat(null);
-            _serializationShape = (format == null) ? null : format.getShape();
+            final JsonFormat.Value format = builder.getBeanDescription().findExpectedFormat(null);
+            _serializationShape = format.getShape();
         }
     }
 
-    public BeanSerializerBase(BeanSerializerBase src,
+    protected BeanSerializerBase(BeanSerializerBase src,
             BeanPropertyWriter[] properties, BeanPropertyWriter[] filteredProperties)
     {
         super(src._handledType);
+        _beanType = src._beanType;
         _props = properties;
         _filteredProps = filteredProperties;
 
@@ -143,7 +153,7 @@ public abstract class BeanSerializerBase
     {
         this(src, objectIdWriter, src._propertyFilterId);
     }
-    
+
     /**
      * @since 2.3
      */
@@ -151,9 +161,10 @@ public abstract class BeanSerializerBase
             ObjectIdWriter objectIdWriter, Object filterId)
     {
         super(src._handledType);
+        _beanType = src._beanType;
         _props = src._props;
         _filteredProps = src._filteredProps;
-        
+
         _typeId = src._typeId;
         _anyGetterWriter = src._anyGetterWriter;
         _objectIdWriter = objectIdWriter;
@@ -161,12 +172,22 @@ public abstract class BeanSerializerBase
         _serializationShape = src._serializationShape;
     }
 
+    @Deprecated // since 2.8, remove soon
     protected BeanSerializerBase(BeanSerializerBase src, String[] toIgnore)
+    {
+        this(src, ArrayBuilders.arrayToSet(toIgnore), null);
+    }
+
+    @Deprecated // since 2.12
+    protected BeanSerializerBase(BeanSerializerBase src, Set<String> toIgnore) {
+        this(src, toIgnore, null);
+    }
+
+    protected BeanSerializerBase(BeanSerializerBase src, Set<String> toIgnore, Set<String> toInclude)
     {
         super(src._handledType);
 
-        // Bit clumsy, but has to do:
-        HashSet<String> ignoredSet = ArrayBuilders.arrayToSet(toIgnore);
+        _beanType = src._beanType;
         final BeanPropertyWriter[] propsIn = src._props;
         final BeanPropertyWriter[] fpropsIn = src._filteredProps;
         final int len = propsIn.length;
@@ -177,7 +198,7 @@ public abstract class BeanSerializerBase
         for (int i = 0; i < len; ++i) {
             BeanPropertyWriter bpw = propsIn[i];
             // should be ignored?
-            if (ignoredSet.contains(bpw.getName())) {
+            if (IgnorePropertiesUtil.shouldIgnore(bpw.getName(), toIgnore, toInclude)) {
                 continue;
             }
             propsOut.add(bpw);
@@ -187,18 +208,18 @@ public abstract class BeanSerializerBase
         }
         _props = propsOut.toArray(new BeanPropertyWriter[propsOut.size()]);
         _filteredProps = (fpropsOut == null) ? null : fpropsOut.toArray(new BeanPropertyWriter[fpropsOut.size()]);
-        
+
         _typeId = src._typeId;
         _anyGetterWriter = src._anyGetterWriter;
         _objectIdWriter = src._objectIdWriter;
         _propertyFilterId = src._propertyFilterId;
         _serializationShape = src._serializationShape;
     }
-    
+
     /**
      * Mutant factory used for creating a new instance with different
      * {@link ObjectIdWriter}.
-     * 
+     *
      * @since 2.0
      */
     public abstract BeanSerializerBase withObjectIdWriter(ObjectIdWriter objectIdWriter);
@@ -206,16 +227,40 @@ public abstract class BeanSerializerBase
     /**
      * Mutant factory used for creating a new instance with additional
      * set of properties to ignore (from properties this instance otherwise has)
-     * 
-     * @since 2.0
+     *
+     * @since 2.8
+     * @deprecated Since 2.12
      */
-    protected abstract BeanSerializerBase withIgnorals(String[] toIgnore);
+    @Deprecated // since 2.12
+    protected BeanSerializerBase withIgnorals(Set<String> toIgnore) {
+        return withByNameInclusion(toIgnore, null);
+    }
+
+    /**
+     * Mutant factory used for creating a new instance with additional
+     * set of properties to ignore or include (from properties this instance otherwise has)
+     *
+     * @since 2.12
+     */
+    protected abstract BeanSerializerBase withByNameInclusion(Set<String> toIgnore,
+            Set<String> toInclude);
+
+    /**
+     * Mutant factory used for creating a new instance with additional
+     * set of properties to ignore (from properties this instance otherwise has)
+     *
+     * @deprecated since 2.8
+     */
+    @Deprecated
+    protected BeanSerializerBase withIgnorals(String[] toIgnore) {
+        return withIgnorals(ArrayBuilders.arrayToSet(toIgnore));
+    }
 
     /**
      * Mutant factory for creating a variant that output POJO as a
      * JSON Array. Implementations may ignore this request if output
      * as array is not possible (either at all, or reliably).
-     * 
+     *
      * @since 2.1
      */
     protected abstract BeanSerializerBase asArraySerializer();
@@ -223,12 +268,24 @@ public abstract class BeanSerializerBase
     /**
      * Mutant factory used for creating a new instance with different
      * filter id (used with <code>JsonFilter</code> annotation)
-     * 
+     *
      * @since 2.3
      */
     @Override
     public abstract BeanSerializerBase withFilterId(Object filterId);
-    
+
+    /**
+     * Mutant factory used for creating a new instance with modified set
+     * of properties.
+     *<p>
+     * Note: in 2.11.x, need to keep non-abstract for slightly better compatibility
+     * (XML module extends)
+     *
+     * @since 2.11.1
+     */
+    protected abstract BeanSerializerBase withProperties(BeanPropertyWriter[] properties,
+            BeanPropertyWriter[] filteredProperties);
+
     /**
      * Copy-constructor that is useful for sub-classes that just want to
      * copy all super-class properties without modifications.
@@ -244,7 +301,7 @@ public abstract class BeanSerializerBase
     protected BeanSerializerBase(BeanSerializerBase src, NameTransformer unwrapper) {
         this(src, rename(src._props, unwrapper), rename(src._filteredProps, unwrapper));
     }
-    
+
     private final static BeanPropertyWriter[] rename(BeanPropertyWriter[] props,
             NameTransformer transformer)
     {
@@ -264,7 +321,7 @@ public abstract class BeanSerializerBase
 
     /*
     /**********************************************************
-    /* Post-constriction processing: resolvable, contextual
+    /* Post-construction processing: resolvable, contextual
     /**********************************************************
      */
 
@@ -293,7 +350,7 @@ public abstract class BeanSerializerBase
                     }
                 }
             }
-            
+
             if (prop.hasSerializer()) {
                 continue;
             }
@@ -302,13 +359,10 @@ public abstract class BeanSerializerBase
             if (ser == null) {
                 // Was the serialization type hard-coded? If so, use it
                 JavaType type = prop.getSerializationType();
-                
+
                 // It not, we can use declared return type if and only if declared type is final:
                 // if not, we don't really know the actual type until we get the instance.
                 if (type == null) {
-                    // 30-Oct-2015, tatu: Not sure why this was used
-//                    type = provider.constructType(prop.getGenericPropertyType());
-                    // but this looks better
                     type = prop.getType();
                     if (!type.isFinal()) {
                         if (type.isContainerType() || type.containedTypeCount() > 0) {
@@ -318,9 +372,8 @@ public abstract class BeanSerializerBase
                     }
                 }
                 ser = provider.findValueSerializer(type, prop);
-                /* 04-Feb-2010, tatu: We may have stashed type serializer for content types
-                 *   too, earlier; if so, it's time to connect the dots here:
-                 */
+                // 04-Feb-2010, tatu: We may have stashed type serializer for content types
+                //   too, earlier; if so, it's time to connect the dots here:
                 if (type.isContainerType()) {
                     TypeSerializer typeSer = type.getContentType().getTypeHandler();
                     if (typeSer != null) {
@@ -334,14 +387,18 @@ public abstract class BeanSerializerBase
                     }
                 }
             }
-            prop.assignSerializer(ser);
-            // and maybe replace filtered property too? (see [JACKSON-364])
+            // and maybe replace filtered property too?
             if (i < filteredCount) {
                 BeanPropertyWriter w2 = _filteredProps[i];
                 if (w2 != null) {
                     w2.assignSerializer(ser);
+                    // 17-Mar-2017, tatu: Typically will lead to chained call to original property,
+                    //    which would lead to double set. Not a problem itself, except... unwrapping
+                    //    may require work to be done, which does lead to an actual issue.
+                    continue;
                 }
             }
+            prop.assignSerializer(ser);
         }
 
         // also, any-getter may need to be resolved
@@ -355,7 +412,7 @@ public abstract class BeanSerializerBase
      * Helper method that can be used to see if specified property is annotated
      * to indicate use of a converter for property value (in case of container types,
      * it is container type itself, not key or content type).
-     * 
+     *
      * @since 2.2
      */
     protected JsonSerializer<Object> findConvertingSerializer(SerializerProvider provider,
@@ -390,58 +447,75 @@ public abstract class BeanSerializerBase
         final AnnotatedMember accessor = (property == null || intr == null)
                 ? null : property.getMember();
         final SerializationConfig config = provider.getConfig();
-        
+
         // Let's start with one big transmutation: Enums that are annotated
         // to serialize as Objects may want to revert
+        JsonFormat.Value format = findFormatOverrides(provider, property, _handledType);
         JsonFormat.Shape shape = null;
-        if (accessor != null) {
-            JsonFormat.Value format = intr.findFormat((Annotated) accessor);
+        if ((format != null) && format.hasShape()) {
+            shape = format.getShape();
+            // or, alternatively, asked to revert "back to" other representations...
+            if ((shape != JsonFormat.Shape.ANY) && (shape != _serializationShape)) {
+                if (_beanType.isEnumType()) {
+                    switch (shape) {
+                    case STRING:
+                    case NUMBER:
+                    case NUMBER_INT:
+                        // 12-Oct-2014, tatu: May need to introspect full annotations... but
+                        //   for now, just do class ones
+                        BeanDescription desc = config.introspectClassAnnotations(_beanType);
+                        JsonSerializer<?> ser = EnumSerializer.construct(_beanType.getRawClass(),
+                                provider.getConfig(), desc, format);
+                        return provider.handlePrimaryContextualization(ser, property);
+                    }
+                // 16-Oct-2016, tatu: Ditto for `Map`, `Map.Entry` subtypes
+                } else if (shape == JsonFormat.Shape.NATURAL) {
+                    if (_beanType.isMapLikeType() && Map.class.isAssignableFrom(_handledType)) {
+                        ;
+                    } else if (Map.Entry.class.isAssignableFrom(_handledType)) {
+                        JavaType mapEntryType = _beanType.findSuperType(Map.Entry.class);
 
-            if (format != null) {
-                shape = format.getShape();
-                // or, alternatively, asked to revert "back to" other representations...
-                if (shape != _serializationShape) {
-                    if (_handledType.isEnum()) {
-                        switch (shape) {
-                        case STRING:
-                        case NUMBER:
-                        case NUMBER_INT:
-                            // 12-Oct-2014, tatu: May need to introspect full annotations... but
-                            //   for now, just do class ones
-                            BeanDescription desc = config.introspectClassAnnotations(_handledType);
-                            JsonSerializer<?> ser = EnumSerializer.construct(_handledType,
-                                    provider.getConfig(), desc, format);
-                            return provider.handlePrimaryContextualization(ser, property);
-                        }
+                        JavaType kt = mapEntryType.containedTypeOrUnknown(0);
+                        JavaType vt = mapEntryType.containedTypeOrUnknown(1);
+
+                        // 16-Oct-2016, tatu: could have problems with type handling, as we do not
+                        //   see if "static" typing is needed, nor look for `TypeSerializer` yet...
+                        JsonSerializer<?> ser = new MapEntrySerializer(_beanType, kt, vt,
+                                false, null, property);
+                        return provider.handlePrimaryContextualization(ser, property);
                     }
                 }
             }
         }
 
         ObjectIdWriter oiw = _objectIdWriter;
-        String[] ignorals = null;
+
+        // 16-Jun-2020, tatu: [databind#2759] means we need to handle reordering
+        //    at a later point
+        int idPropOrigIndex = 0;
+        Set<String> ignoredProps = null;
+        Set<String> includedProps = null;
         Object newFilterId = null;
-        
+
         // Then we may have an override for Object Id
         if (accessor != null) {
-            ignorals = intr.findPropertiesToIgnore(accessor, true);
+            ignoredProps = intr.findPropertyIgnoralByName(config, accessor).findIgnoredForSerialization();
+            includedProps = intr.findPropertyInclusionByName(config, accessor).getIncluded();
             ObjectIdInfo objectIdInfo = intr.findObjectIdInfo(accessor);
             if (objectIdInfo == null) {
                 // no ObjectId override, but maybe ObjectIdRef?
                 if (oiw != null) {
-                    objectIdInfo = intr.findObjectReferenceInfo(accessor,
-                            new ObjectIdInfo(NAME_FOR_OBJECT_REF, null, null, null));
-                    oiw = _objectIdWriter.withAlwaysAsId(objectIdInfo.getAlwaysAsId());
+                    objectIdInfo = intr.findObjectReferenceInfo(accessor, null);
+                    if (objectIdInfo != null) {
+                        oiw = _objectIdWriter.withAlwaysAsId(objectIdInfo.getAlwaysAsId());
+                    }
                 }
             } else {
-                /* Ugh: mostly copied from BeanSerializerBase: but can't easily
-                 * change it to be able to move to SerializerProvider (where it
-                 * really belongs)
-                 */
-                
+                // Ugh: mostly copied from BeanDeserializerBase: but can't easily change it
+                // to be able to move to SerializerProvider (where it really belongs)
+
                 // 2.1: allow modifications by "id ref" annotations as well:
                 objectIdInfo = intr.findObjectReferenceInfo(accessor, objectIdInfo);
-                ObjectIdGenerator<?> gen;
                 Class<?> implClass = objectIdInfo.getGeneratorType();
                 JavaType type = provider.constructType(implClass);
                 JavaType idType = provider.getTypeFactory().findTypeParameters(type, ObjectIdGenerator.class)[0];
@@ -450,39 +524,30 @@ public abstract class BeanSerializerBase
                     String propName = objectIdInfo.getPropertyName().getSimpleName();
                     BeanPropertyWriter idProp = null;
 
-                    for (int i = 0, len = _props.length ;; ++i) {
+                    for (int i = 0, len = _props.length; ; ++i) {
                         if (i == len) {
-                            throw new IllegalArgumentException("Invalid Object Id definition for "+_handledType.getName()
-                                    +": can not find property with name '"+propName+"'");
+                            provider.reportBadDefinition(_beanType, String.format(
+                                    "Invalid Object Id definition for %s: cannot find property with name %s",
+                                    ClassUtil.nameOf(handledType()), ClassUtil.name(propName)));
                         }
                         BeanPropertyWriter prop = _props[i];
                         if (propName.equals(prop.getName())) {
                             idProp = prop;
-                            /* Let's force it to be the first property to output
-                             * (although it may still get rearranged etc)
-                             */
-                            if (i > 0) { // note: must shuffle both regular properties and filtered
-                                System.arraycopy(_props, 0, _props, 1, i);
-                                _props[0] = idProp;
-                                if (_filteredProps != null) {
-                                    BeanPropertyWriter fp = _filteredProps[i];
-                                    System.arraycopy(_filteredProps, 0, _filteredProps, 1, i);
-                                    _filteredProps[0] = fp;
-                                }
-                            }
+                            // Let's mark id prop to be moved as the first (may still get rearranged)
+                            // (although it may still get rearranged etc)
+                            idPropOrigIndex = i;
                             break;
                         }
                     }
                     idType = idProp.getType();
-                    gen = new PropertyBasedObjectIdGenerator(objectIdInfo, idProp);
+                    ObjectIdGenerator<?> gen = new PropertyBasedObjectIdGenerator(objectIdInfo, idProp);
                     oiw = ObjectIdWriter.construct(idType, (PropertyName) null, gen, objectIdInfo.getAlwaysAsId());
                 } else { // other types need to be simpler
-                    gen = provider.objectIdGeneratorInstance(accessor, objectIdInfo);
+                    ObjectIdGenerator<?> gen = provider.objectIdGeneratorInstance(accessor, objectIdInfo);
                     oiw = ObjectIdWriter.construct(idType, objectIdInfo.getPropertyName(), gen,
                             objectIdInfo.getAlwaysAsId());
                 }
             }
-            
             // Or change Filter Id in use?
             Object filterId = intr.findFilterId(accessor);
             if (filterId != null) {
@@ -494,6 +559,25 @@ public abstract class BeanSerializerBase
         }
         // either way, need to resolve serializer:
         BeanSerializerBase contextual = this;
+
+        // 16-Jun-2020, tatu: [databind#2759] must make copies, then reorder
+        if (idPropOrigIndex > 0) { // note: must shuffle both regular properties and filtered
+            final BeanPropertyWriter[] newProps = Arrays.copyOf(_props, _props.length);
+            BeanPropertyWriter bpw = newProps[idPropOrigIndex];
+            System.arraycopy(newProps, 0, newProps, 1, idPropOrigIndex);
+            newProps[0] = bpw;
+            final BeanPropertyWriter[] newFiltered;
+            if (_filteredProps == null) {
+                newFiltered = null;
+            } else {
+                newFiltered = Arrays.copyOf(_filteredProps, _filteredProps.length);
+                bpw = newFiltered[idPropOrigIndex];
+                System.arraycopy(newFiltered, 0, newFiltered, 1, idPropOrigIndex);
+                newFiltered[0] = bpw;
+            }
+            contextual = contextual.withProperties(newProps, newFiltered);
+        }
+
         if (oiw != null) {
             JsonSerializer<?> ser = provider.findValueSerializer(oiw.idType, property);
             oiw = oiw.withSerializer(ser);
@@ -501,16 +585,20 @@ public abstract class BeanSerializerBase
                 contextual = contextual.withObjectIdWriter(oiw);
             }
         }
-        // And possibly add more properties to ignore
-        if (ignorals != null && ignorals.length != 0) {
-            contextual = contextual.withIgnorals(ignorals);
+        // Possibly change inclusions: for ignored, only non-empty set matters;
+        // for inclusion `null` means "not defined" but empty "include nothing":
+        if (((ignoredProps != null) && !ignoredProps.isEmpty())
+                || (includedProps != null)) {
+            contextual = contextual.withByNameInclusion(ignoredProps, includedProps);
         }
         if (newFilterId != null) {
             contextual = contextual.withFilterId(newFilterId);
         }
+
         if (shape == null) {
             shape = _serializationShape;
         }
+        // last but not least; may need to transmute into as-array serialization
         if (shape == JsonFormat.Shape.ARRAY) {
             return contextual.asArraySerializer();
         }
@@ -538,7 +626,7 @@ public abstract class BeanSerializerBase
     public boolean usesObjectId() {
         return (_objectIdWriter != null);
     }
-    
+
     // Main serialization method left unimplemented
     @Override
     public abstract void serialize(Object bean, JsonGenerator gen, SerializerProvider provider)
@@ -551,28 +639,22 @@ public abstract class BeanSerializerBase
         throws IOException
     {
         if (_objectIdWriter != null) {
-            gen.setCurrentValue(bean); // [databind#631]
+            // 08-Jul-2021, tatu: Should NOT yet set, would override "parent"
+            //    context (wrt [databind#3160]
+//            gen.setCurrentValue(bean);
             _serializeWithObjectId(bean, gen, provider, typeSer);
             return;
         }
 
-        String typeStr = (_typeId == null) ? null : _customTypeId(bean);
-        if (typeStr == null) {
-            typeSer.writeTypePrefixForObject(bean, gen);
-        } else {
-            typeSer.writeCustomTypePrefixForObject(bean, gen, typeStr);
-        }
-        gen.setCurrentValue(bean); // [databind#631]
+        WritableTypeId typeIdDef = _typeIdDef(typeSer, bean, JsonToken.START_OBJECT);
+        typeSer.writeTypePrefix(gen, typeIdDef);
+        gen.setCurrentValue(bean); // [databind#878]
         if (_propertyFilterId != null) {
             serializeFieldsFiltered(bean, gen, provider);
         } else {
             serializeFields(bean, gen, provider);
         }
-        if (typeStr == null) {
-            typeSer.writeTypeSuffixForObject(bean, gen);
-        } else {
-            typeSer.writeCustomTypeSuffixForObject(bean, gen, typeStr);
-        }
+        typeSer.writeTypeSuffix(gen, typeIdDef);
     }
 
     protected final void _serializeWithObjectId(Object bean, JsonGenerator gen, SerializerProvider provider,
@@ -591,7 +673,7 @@ public abstract class BeanSerializerBase
             return;
         }
         if (startEndObject) {
-            gen.writeStartObject();
+            gen.writeStartObject(bean);
         }
         objectId.writeAsField(gen, provider, w);
         if (_propertyFilterId != null) {
@@ -603,7 +685,7 @@ public abstract class BeanSerializerBase
             gen.writeEndObject();
         }
     }
-    
+
     protected final void _serializeWithObjectId(Object bean, JsonGenerator gen, SerializerProvider provider,
             TypeSerializer typeSer) throws IOException
     {
@@ -619,33 +701,45 @@ public abstract class BeanSerializerBase
             w.serializer.serialize(id, gen, provider);
             return;
         }
-
         _serializeObjectId(bean, gen, provider, typeSer, objectId);
     }
 
-    protected  void _serializeObjectId(Object bean, JsonGenerator gen,SerializerProvider provider,
+    protected  void _serializeObjectId(Object bean, JsonGenerator g,
+            SerializerProvider provider,
             TypeSerializer typeSer, WritableObjectId objectId) throws IOException
     {
         final ObjectIdWriter w = _objectIdWriter;
-        String typeStr = (_typeId == null) ? null :_customTypeId(bean);
-        if (typeStr == null) {
-            typeSer.writeTypePrefixForObject(bean, gen);
-        } else {
-            typeSer.writeCustomTypePrefixForObject(bean, gen, typeStr);
-        }
-        objectId.writeAsField(gen, provider, w);
+        WritableTypeId typeIdDef = _typeIdDef(typeSer, bean, JsonToken.START_OBJECT);
+
+        typeSer.writeTypePrefix(g, typeIdDef);
+        // 08-Jul-2021, tatu: Moved here from earlier place, wrt [databind#3160]
+        g.setCurrentValue(bean); // [databind#631]
+        objectId.writeAsField(g, provider, w);
         if (_propertyFilterId != null) {
-            serializeFieldsFiltered(bean, gen, provider);
+            serializeFieldsFiltered(bean, g, provider);
         } else {
-            serializeFields(bean, gen, provider);
+            serializeFields(bean, g, provider);
         }
-        if (typeStr == null) {
-            typeSer.writeTypeSuffixForObject(bean, gen);
-        } else {
-            typeSer.writeCustomTypeSuffixForObject(bean, gen, typeStr);
-        }
+        typeSer.writeTypeSuffix(g, typeIdDef);
     }
-    
+
+    /**
+     * @since 2.9
+     */
+    protected final WritableTypeId _typeIdDef(TypeSerializer typeSer,
+            Object bean, JsonToken valueShape) {
+        if (_typeId == null) {
+            return typeSer.typeId(bean, valueShape);
+        }
+        Object typeId = _typeId.getValue(bean);
+        if (typeId == null) {
+            // 28-Jun-2017, tatu: Is this really needed? Unchanged from 2.8 but...
+            typeId = "";
+        }
+        return typeSer.typeId(bean, valueShape, typeId);
+    }
+
+    @Deprecated // since 2.9
     protected final String _customTypeId(Object bean)
     {
         final Object typeId = _typeId.getValue(bean);
@@ -654,7 +748,7 @@ public abstract class BeanSerializerBase
         }
         return (typeId instanceof String) ? (String) typeId : typeId.toString();
     }
-    
+
     /*
     /**********************************************************
     /* Field serialization methods
@@ -685,16 +779,15 @@ public abstract class BeanSerializerBase
             String name = (i == props.length) ? "[anySetter]" : props[i].getName();
             wrapAndThrow(provider, e, bean, name);
         } catch (StackOverflowError e) {
-            /* 04-Sep-2009, tatu: Dealing with this is tricky, since we do not
-             *   have many stack frames to spare... just one or two; can't
-             *   make many calls.
-             */
+            // 04-Sep-2009, tatu: Dealing with this is tricky, since we don't have many
+            //   stack frames to spare... just one or two; can't make many calls.
+
             // 10-Dec-2015, tatu: and due to above, avoid "from" method, call ctor directly:
             //JsonMappingException mapE = JsonMappingException.from(gen, "Infinite recursion (StackOverflowError)", e);
-            JsonMappingException mapE = new JsonMappingException(gen, "Infinite recursion (StackOverflowError)", e);
+            DatabindException mapE = new JsonMappingException(gen, "Infinite recursion (StackOverflowError)", e);
 
-             String name = (i == props.length) ? "[anySetter]" : props[i].getName();
-            mapE.prependPath(new JsonMappingException.Reference(bean, name));
+            String name = (i == props.length) ? "[anySetter]" : props[i].getName();
+            mapE.prependPath(bean, name);
             throw mapE;
         }
     }
@@ -706,11 +799,10 @@ public abstract class BeanSerializerBase
      */
     protected void serializeFieldsFiltered(Object bean, JsonGenerator gen,
             SerializerProvider provider)
-        throws IOException, JsonGenerationException
+        throws IOException
     {
-        /* note: almost verbatim copy of "serializeFields"; copied (instead of merged)
-         * so that old method need not add check for existence of filter.
-         */
+        // note: almost verbatim copy of "serializeFields"; copied (instead of merged)
+        // so that old method need not add check for existence of filter.
         final BeanPropertyWriter[] props;
         if (_filteredProps != null && provider.getActiveView() != null) {
             props = _filteredProps;
@@ -740,9 +832,9 @@ public abstract class BeanSerializerBase
         } catch (StackOverflowError e) {
             // Minimize call depth since we are close to fail:
             //JsonMappingException mapE = JsonMappingException.from(gen, "Infinite recursion (StackOverflowError)", e);
-            JsonMappingException mapE = new JsonMappingException(gen, "Infinite recursion (StackOverflowError)", e);
+            DatabindException mapE = new JsonMappingException(gen, "Infinite recursion (StackOverflowError)", e);
             String name = (i == props.length) ? "[anySetter]" : props[i].getName();
-            mapE.prependPath(new JsonMappingException.Reference(bean, name));
+            mapE.prependPath(bean, name);
             throw mapE;
         }
     }
@@ -755,14 +847,15 @@ public abstract class BeanSerializerBase
         ObjectNode o = createSchemaNode("object", true);
         // [JACKSON-813]: Add optional JSON Schema id attribute, if found
         // NOTE: not optimal, does NOT go through AnnotationIntrospector etc:
-        JsonSerializableSchema ann = _handledType.getAnnotation(JsonSerializableSchema.class);
+        com.fasterxml.jackson.databind.jsonschema.JsonSerializableSchema ann =
+            _handledType.getAnnotation(com.fasterxml.jackson.databind.jsonschema.JsonSerializableSchema.class);
         if (ann != null) {
             String id = ann.id();
-            if (id != null && id.length() > 0) {
+            if (id != null && !id.isEmpty()) {
                 o.put("id", id);
             }
         }
- 
+
         //todo: should the classname go in the title?
         //o.put("title", _className);
         ObjectNode propertiesNode = o.objectNode();
@@ -772,7 +865,7 @@ public abstract class BeanSerializerBase
         } else {
             filter = null;
         }
-        		
+
         for (int i = 0; i < _props.length; i++) {
             BeanPropertyWriter prop = _props[i];
             if (filter == null) {
@@ -785,12 +878,12 @@ public abstract class BeanSerializerBase
         o.set("properties", propertiesNode);
         return o;
     }
-    
+
     @Override
     public void acceptJsonFormatVisitor(JsonFormatVisitorWrapper visitor, JavaType typeHint)
         throws JsonMappingException
     {
-        //deposit your output format 
+        //deposit your output format
         if (visitor == null) {
             return;
         }

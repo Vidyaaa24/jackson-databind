@@ -22,13 +22,13 @@ public class DeserializerFactoryConfig
     /**
      * By default we plug default key deserializers using as "just another" set of
      * of key deserializers.
-     * 
+     *
      * @since 2.2
      */
     protected final static KeyDeserializers[] DEFAULT_KEY_DESERIALIZERS = new KeyDeserializers[] {
         new StdKeyDeserializers()
     };
-    
+
     /**
      * List of providers for additional deserializers, checked before considering default
      * basic or bean deserializers.
@@ -40,7 +40,7 @@ public class DeserializerFactoryConfig
      * standard key deserializers.
      */
     protected final KeyDeserializers[] _additionalKeyDeserializers;
-    
+
     /**
      * List of modifiers that can change the way {@link BeanDeserializer} instances
      * are configured and constructed.
@@ -99,7 +99,7 @@ public class DeserializerFactoryConfig
     public DeserializerFactoryConfig withAdditionalDeserializers(Deserializers additional)
     {
         if (additional == null) {
-            throw new IllegalArgumentException("Can not pass null Deserializers");
+            throw new IllegalArgumentException("Cannot pass null Deserializers");
         }
         Deserializers[] all = ArrayBuilders.insertInListNoDup(_additionalDeserializers, additional);
         return new DeserializerFactoryConfig(all, _additionalKeyDeserializers, _modifiers,
@@ -115,7 +115,7 @@ public class DeserializerFactoryConfig
     public DeserializerFactoryConfig withAdditionalKeyDeserializers(KeyDeserializers additional)
     {
         if (additional == null) {
-            throw new IllegalArgumentException("Can not pass null KeyDeserializers");
+            throw new IllegalArgumentException("Cannot pass null KeyDeserializers");
         }
         KeyDeserializers[] all = ArrayBuilders.insertInListNoDup(_additionalKeyDeserializers, additional);
         return new DeserializerFactoryConfig(_additionalDeserializers, all, _modifiers,
@@ -131,7 +131,7 @@ public class DeserializerFactoryConfig
     public DeserializerFactoryConfig withDeserializerModifier(BeanDeserializerModifier modifier)
     {
         if (modifier == null) {
-            throw new IllegalArgumentException("Can not pass null modifier");
+            throw new IllegalArgumentException("Cannot pass null modifier");
         }
         BeanDeserializerModifier[] all = ArrayBuilders.insertInListNoDup(_modifiers, modifier);
         return new DeserializerFactoryConfig(_additionalDeserializers, _additionalKeyDeserializers, all,
@@ -148,7 +148,7 @@ public class DeserializerFactoryConfig
     public DeserializerFactoryConfig withAbstractTypeResolver(AbstractTypeResolver resolver)
     {
         if (resolver == null) {
-            throw new IllegalArgumentException("Can not pass null resolver");
+            throw new IllegalArgumentException("Cannot pass null resolver");
         }
         AbstractTypeResolver[] all = ArrayBuilders.insertInListNoDup(_abstractTypeResolvers, resolver);
         return new DeserializerFactoryConfig(_additionalDeserializers, _additionalKeyDeserializers, _modifiers,
@@ -161,30 +161,30 @@ public class DeserializerFactoryConfig
      * value instantiator provider object.
      * Added instantiator provider has the highest priority (that is, it
      * gets called before any already registered resolver).
-     * 
+     *
      * @param instantiators Object that can provide {@link com.fasterxml.jackson.databind.deser.ValueInstantiator}s for
      *    constructing POJO values during deserialization
      */
-    public DeserializerFactoryConfig withValueInstantiators(ValueInstantiators instantiators) 
+    public DeserializerFactoryConfig withValueInstantiators(ValueInstantiators instantiators)
     {
         if (instantiators == null) {
-            throw new IllegalArgumentException("Can not pass null resolver");
+            throw new IllegalArgumentException("Cannot pass null resolver");
         }
         ValueInstantiators[] all = ArrayBuilders.insertInListNoDup(_valueInstantiators, instantiators);
         return new DeserializerFactoryConfig(_additionalDeserializers, _additionalKeyDeserializers, _modifiers,
                 _abstractTypeResolvers, all);
     }
-    
+
     public boolean hasDeserializers() { return _additionalDeserializers.length > 0; }
 
     public boolean hasKeyDeserializers() { return _additionalKeyDeserializers.length > 0; }
-    
+
     public boolean hasDeserializerModifiers() { return _modifiers.length > 0; }
 
     public boolean hasAbstractTypeResolvers() { return _abstractTypeResolvers.length > 0; }
 
     public boolean hasValueInstantiators() { return _valueInstantiators.length > 0; }
-    
+
     public Iterable<Deserializers> deserializers() {
         return new ArrayIterator<Deserializers>(_additionalDeserializers);
     }
@@ -192,7 +192,7 @@ public class DeserializerFactoryConfig
     public Iterable<KeyDeserializers> keyDeserializers() {
         return new ArrayIterator<KeyDeserializers>(_additionalKeyDeserializers);
     }
-    
+
     public Iterable<BeanDeserializerModifier> deserializerModifiers() {
         return new ArrayIterator<BeanDeserializerModifier>(_modifiers);
     }

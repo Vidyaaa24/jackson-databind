@@ -26,6 +26,11 @@ public class UUIDDeserializer extends FromStringDeserializer<UUID>
 
     public UUIDDeserializer() { super(UUID.class); }
 
+    @Override // since 2.12
+    public Object getEmptyValue(DeserializationContext ctxt) {
+        return new UUID(0L, 0L);
+    }
+
     @Override
     protected UUID _deserialize(String id, DeserializationContext ctxt) throws IOException
     {
@@ -39,7 +44,7 @@ public class UUIDDeserializer extends FromStringDeserializer<UUID>
                 byte[] stuff = Base64Variants.getDefaultVariant().decode(id);
                 return _fromBytes(stuff, ctxt);
             }
-            _badFormat(id, ctxt);
+            return _badFormat(id, ctxt);
         }
 
         // verify hyphens first:
@@ -62,38 +67,35 @@ public class UUIDDeserializer extends FromStringDeserializer<UUID>
 
         return new UUID(hi, lo);
     }
-    
+
     @Override
     protected UUID _deserializeEmbedded(Object ob, DeserializationContext ctxt) throws IOException
     {
         if (ob instanceof byte[]) {
             return _fromBytes((byte[]) ob, ctxt);
         }
-        super._deserializeEmbedded(ob, ctxt);
-        return null; // never gets here
+        return super._deserializeEmbedded(ob, ctxt);
     }
 
-    private void _badFormat(String uuidStr, DeserializationContext ctxt)
-        throws JsonMappingException
+    private UUID _badFormat(String uuidStr, DeserializationContext ctxt)
+        throws IOException
     {
-        throw InvalidFormatException.from(ctxt.getParser(),
-                String.format("UUID has to be represented by standard 36-char representation: input String '%s'",
-                        uuidStr),
-                uuidStr, handledType());
+        return (UUID) ctxt.handleWeirdStringValue(handledType(), uuidStr,
+                "UUID has to be represented by standard 36-char representation");
     }
-    
-    static int intFromChars(String str, int index, DeserializationContext ctxt) throws JsonMappingException {
+
+    int intFromChars(String str, int index, DeserializationContext ctxt) throws JsonMappingException {
         return (byteFromChars(str, index, ctxt) << 24)
                 + (byteFromChars(str, index+2, ctxt) << 16)
                 + (byteFromChars(str, index+4, ctxt) << 8)
                 + byteFromChars(str, index+6, ctxt);
     }
-    
-    static int shortFromChars(String str, int index, DeserializationContext ctxt) throws JsonMappingException {
+
+    int shortFromChars(String str, int index, DeserializationContext ctxt) throws JsonMappingException {
         return (byteFromChars(str, index, ctxt) << 8) + byteFromChars(str, index+2, ctxt);
     }
-    
-    static int byteFromChars(String str, int index, DeserializationContext ctxt) throws JsonMappingException
+
+    int byteFromChars(String str, int index, DeserializationContext ctxt) throws JsonMappingException
     {
         final char c1 = str.charAt(index);
         final char c2 = str.charAt(index+1);
@@ -110,11 +112,13 @@ public class UUIDDeserializer extends FromStringDeserializer<UUID>
         return _badChar(str, index+1, ctxt, c2);
     }
 
-    static int _badChar(String uuidStr, int index, DeserializationContext ctxt, char c) throws JsonMappingException {
-        String msg = String.format(
-"Non-hex character '%c' (value 0x%s), not valid for UUID String: input String '%s'",
-        c, Integer.toHexString(c), uuidStr);
-        throw InvalidFormatException.from(ctxt.getParser(), msg, uuidStr, UUID.class);
+    int _badChar(String uuidStr, int index, DeserializationContext ctxt, char c) throws JsonMappingException {
+        // 15-May-2016, tatu: Ideally should not throw, but call `handleWeirdStringValue`...
+        //   however, control flow is gnarly here, so for now just throw
+        throw ctxt.weirdStringException(uuidStr, handledType(),
+                String.format(
+                "Non-hex character '%c' (value 0x%s), not valid for UUID String",
+                c, Integer.toHexString(c)));
     }
 
     private UUID _fromBytes(byte[] bytes, DeserializationContext ctxt) throws JsonMappingException {

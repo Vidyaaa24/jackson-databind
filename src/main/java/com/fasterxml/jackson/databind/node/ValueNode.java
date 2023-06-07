@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.List;
 
 import com.fasterxml.jackson.core.*;
+import com.fasterxml.jackson.core.type.WritableTypeId;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
@@ -16,15 +17,17 @@ import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
 public abstract class ValueNode
     extends BaseJsonNode
 {
+    private static final long serialVersionUID = 1L;
+
     protected ValueNode() { }
 
     @Override
     protected JsonNode _at(JsonPointer ptr) {
-        // will only allow direct matches, but no traversal through
-        // (base class checks for direct match)
-        return MissingNode.getInstance();
+        // 02-Jan-2020, tatu: As per [databind#3005] must return `null` and NOT
+        //    "missing node"
+        return null;
     }
-    
+
     /**
      * All current value nodes are immutable, so we can just return
      * them as is.
@@ -32,32 +35,33 @@ public abstract class ValueNode
     @SuppressWarnings("unchecked")
     @Override
     public <T extends JsonNode> T deepCopy() { return (T) this; }
-    
+
     @Override public abstract JsonToken asToken();
 
     @Override
-    public void serializeWithType(JsonGenerator jg, SerializerProvider provider,
+    public void serializeWithType(JsonGenerator g, SerializerProvider provider,
             TypeSerializer typeSer)
-        throws IOException, JsonProcessingException
+        throws IOException
     {
-        typeSer.writeTypePrefixForScalar(this, jg);
-        serialize(jg, provider);
-        typeSer.writeTypeSuffixForScalar(this, jg);
+        WritableTypeId typeIdDef = typeSer.writeTypePrefix(g,
+                typeSer.typeId(this, asToken()));
+        serialize(g, provider);
+        typeSer.writeTypeSuffix(g, typeIdDef);
     }
 
     /*
     /**********************************************************************
-    /* Base impls for standard methods
+    /* Basic property access
     /**********************************************************************
      */
 
     @Override
-    public String toString() { return asText(); }
+    public boolean isEmpty() { return true; }
 
     /*
-     **********************************************************************
-     * Navigation methods
-     **********************************************************************
+    /**********************************************************************
+    /* Navigation methods
+    /**********************************************************************
      */
 
     @Override

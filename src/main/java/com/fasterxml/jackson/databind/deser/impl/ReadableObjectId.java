@@ -9,6 +9,7 @@ import com.fasterxml.jackson.annotation.ObjectIdGenerator;
 import com.fasterxml.jackson.annotation.ObjectIdResolver;
 import com.fasterxml.jackson.core.JsonLocation;
 import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.deser.UnresolvedForwardReference;
 
 /**
@@ -18,14 +19,9 @@ import com.fasterxml.jackson.databind.deser.UnresolvedForwardReference;
 public class ReadableObjectId
 {
     /**
-     * @deprecated Change visibility, if possible; prefer using {@link #resolve()}, which is able
-     *    to handle external id resolving mechanism.
+     * @since 2.8 (with this name, formerly `public Object item`)
      */
-    @Deprecated // at least since 2.5. Remove from 2.7
-    public Object item;
-
-    @Deprecated
-    public final Object id;
+    protected Object _item;
 
     protected final ObjectIdGenerator.IdKey _key;
 
@@ -33,15 +29,8 @@ public class ReadableObjectId
 
     protected ObjectIdResolver _resolver;
 
-    @Deprecated // at least since 2.5. Remove from 2.7
-    public ReadableObjectId(Object id) {
-        this.id = id;
-        _key = null;
-    }
-
     public ReadableObjectId(ObjectIdGenerator.IdKey key) {
         _key = key;
-        id = key.key;
     }
 
     public void setResolver(ObjectIdResolver resolver) {
@@ -66,7 +55,8 @@ public class ReadableObjectId
     public void bindItem(Object ob) throws IOException
     {
         _resolver.bindItem(_key, ob);
-        item = ob;
+        _item = ob;
+        Object id = _key.key;
         if (_referringProperties != null) {
             Iterator<Referring> it = _referringProperties.iterator();
             _referringProperties = null;
@@ -77,7 +67,7 @@ public class ReadableObjectId
     }
 
     public Object resolve(){
-         return (item = _resolver.resolveId(_key));
+         return (_item = _resolver.resolveId(_key));
     }
 
     public boolean hasReferringProperties() {
@@ -99,7 +89,7 @@ public class ReadableObjectId
      * {@link ReadableObjectId} and overriding this method.
      *<p>
      * Default implementation simply returns <code>false</code> to indicate that resolution
-     * attempt did not succeed. 
+     * attempt did not succeed.
      *
      * @return True, if resolution succeeded (and no error needs to be reported); false to
      *   indicate resolution did not succeed.
@@ -113,11 +103,11 @@ public class ReadableObjectId
 
     /**
      * Allow access to the resolver in case anybody wants to use it directly, for
-     * examples from 
+     * examples from
      * {@link com.fasterxml.jackson.databind.deser.DefaultDeserializationContext#tryToResolveUnresolvedObjectId}.
      *
      * @return The registered resolver
-     * 
+     *
      * @since 2.7
      */
     public ObjectIdResolver getResolver() {
@@ -142,6 +132,11 @@ public class ReadableObjectId
         public Referring(UnresolvedForwardReference ref, Class<?> beanType) {
             _reference = ref;
             _beanType = beanType;
+        }
+
+        public Referring(UnresolvedForwardReference ref, JavaType beanType) {
+            _reference = ref;
+            _beanType = beanType.getRawClass();
         }
 
         public JsonLocation getLocation() { return _reference.getLocation(); }

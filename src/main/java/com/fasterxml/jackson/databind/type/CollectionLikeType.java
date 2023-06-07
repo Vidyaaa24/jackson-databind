@@ -86,15 +86,7 @@ public class CollectionLikeType extends TypeBase
         if (baseType instanceof TypeBase) {
             return new CollectionLikeType((TypeBase) baseType, elementType);
         }
-        throw new IllegalArgumentException("Can not upgrade from an instance of "+baseType.getClass());
-    }
-
-    @Override
-    @Deprecated // since 2.7
-    protected JavaType _narrow(Class<?> subclass) {
-        return new CollectionLikeType(subclass, _bindings,
-                _superClass, _superInterfaces, _elementType,
-                _valueHandler, _typeHandler, _asStatic);
+        throw new IllegalArgumentException("Cannot upgrade from an instance of "+baseType.getClass());
     }
 
     @Override
@@ -105,7 +97,7 @@ public class CollectionLikeType extends TypeBase
         return new CollectionLikeType(_class, _bindings, _superClass, _superInterfaces,
                 contentType, _valueHandler, _typeHandler, _asStatic);
     }
-    
+
     @Override
     public CollectionLikeType withTypeHandler(Object h) {
         return new CollectionLikeType(_class, _bindings,
@@ -134,6 +126,19 @@ public class CollectionLikeType extends TypeBase
     }
 
     @Override
+    public JavaType withHandlersFrom(JavaType src) {
+        JavaType type = super.withHandlersFrom(src);
+        JavaType srcCt = src.getContentType();
+        if (srcCt != null) {
+            JavaType ct = _elementType.withHandlersFrom(srcCt);
+            if (ct != _elementType) {
+                type = type.withContentType(ct);
+            }
+        }
+        return type;
+    }
+
+    @Override
     public CollectionLikeType withStaticTyping() {
         if (_asStatic) {
             return this;
@@ -150,7 +155,7 @@ public class CollectionLikeType extends TypeBase
                 superClass, superInterfaces, _elementType,
                 _valueHandler, _typeHandler, _asStatic);
     }
-    
+
     /*
     /**********************************************************
     /* Public API
@@ -174,13 +179,18 @@ public class CollectionLikeType extends TypeBase
     @Override
     public Object getContentTypeHandler() {
         return _elementType.getTypeHandler();
-    }    
+    }
+
+    @Override
+    public boolean hasHandlers() {
+        return super.hasHandlers() || _elementType.hasHandlers();
+    }
 
     @Override
     public StringBuilder getErasedSignature(StringBuilder sb) {
         return _classSignature(_class, sb, true);
     }
-    
+
     @Override
     public StringBuilder getGenericSignature(StringBuilder sb) {
         _classSignature(_class, sb, false);
@@ -189,12 +199,14 @@ public class CollectionLikeType extends TypeBase
         sb.append(">;");
         return sb;
     }
-    
+
     @Override
     protected String buildCanonicalName() {
         StringBuilder sb = new StringBuilder();
         sb.append(_class.getName());
-        if (_elementType != null) {
+        // 10-Apr-2021, tatu: [databind#3108] Ensure we have at least nominally
+        //   compatible type declaration (weak guarantee but better than nothing)
+        if ((_elementType != null) && _hasNTypeParameters(1)) {
             sb.append('<');
             sb.append(_elementType.toCanonical());
             sb.append('>');
@@ -213,7 +225,10 @@ public class CollectionLikeType extends TypeBase
      * "real" Collection type; meaning whether it represents a parameterized
      * subtype of {@link java.util.Collection} or just something that acts
      * like one.
+     *
+     * @deprecated Since 2.12 just use instanceof
      */
+    @Deprecated // since 2.12 use assignment checks
     public boolean isTrueCollectionType() {
         return Collection.class.isAssignableFrom(_class);
     }

@@ -7,32 +7,44 @@ import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.annotation.JsonFormat.Shape;
 
 import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.introspect.Annotated;
 import com.fasterxml.jackson.databind.introspect.JacksonAnnotationIntrospector;
 
 public class TestPOJOAsArray extends BaseMapTest
 {
-    static class Pojo
+    static class PojoAsArrayWrapper
     {
         @JsonFormat(shape=JsonFormat.Shape.ARRAY)
-        public PojoValue value;
+        public PojoAsArray value;
 
-        public Pojo() { }
-        public Pojo(String name, int x, int y, boolean c) {
-            value = new PojoValue(name, x, y, c);
+        public PojoAsArrayWrapper() { }
+        public PojoAsArrayWrapper(String name, int x, int y, boolean c) {
+            value = new PojoAsArray(name, x, y, c);
+        }
+    }
+
+    @JsonPropertyOrder(alphabetic=true)
+    static class NonAnnotatedXY {
+        public int x, y;
+
+        public NonAnnotatedXY() { }
+        public NonAnnotatedXY(int x0, int y0) {
+            x = x0;
+            y = y0;
         }
     }
 
     // note: must be serialized/deserialized alphabetically; fields NOT declared in that order
     @JsonPropertyOrder(alphabetic=true)
-    static class PojoValue
+    static class PojoAsArray
     {
         public int x, y;
         public String name;
         public boolean complete;
 
-        public PojoValue() { }
-        public PojoValue(String name, int x, int y, boolean c) {
+        public PojoAsArray() { }
+        public PojoAsArray(String name, int x, int y, boolean c) {
             this.name = name;
             this.x = x;
             this.y = y;
@@ -77,7 +89,6 @@ public class TestPOJOAsArray extends BaseMapTest
         public int y = 2;
     }
 
-    // for [JACKSON-805]
     @JsonFormat(shape=Shape.ARRAY)
     static class SingleBean {
         public String name = "foo";
@@ -115,7 +126,6 @@ public class TestPOJOAsArray extends BaseMapTest
         }
     }
 
-
     /*
     /*****************************************************
     /* Basic tests
@@ -123,14 +133,14 @@ public class TestPOJOAsArray extends BaseMapTest
      */
 
     private final static ObjectMapper MAPPER = new ObjectMapper();
-    
+
     /**
      * Test that verifies that property annotation works
      */
     public void testReadSimplePropertyValue() throws Exception
     {
         String json = "{\"value\":[true,\"Foobar\",42,13]}";
-        Pojo p = MAPPER.readValue(json, Pojo.class);
+        PojoAsArrayWrapper p = MAPPER.readValue(json, PojoAsArrayWrapper.class);
         assertNotNull(p.value);
         assertTrue(p.value.complete);
         assertEquals("Foobar", p.value.name);
@@ -150,13 +160,13 @@ public class TestPOJOAsArray extends BaseMapTest
         assertEquals(1, p.x);
         assertEquals(2, p.y);
     }
-    
+
     /**
      * Test that verifies that property annotation works
      */
     public void testWriteSimplePropertyValue() throws Exception
     {
-        String json = MAPPER.writeValueAsString(new Pojo("Foobar", 42, 13, true));
+        String json = MAPPER.writeValueAsString(new PojoAsArrayWrapper("Foobar", 42, 13, true));
         // will have wrapper POJO, then POJO-as-array..
         assertEquals("{\"value\":[true,\"Foobar\",42,13]}", json);
     }
@@ -182,8 +192,7 @@ public class TestPOJOAsArray extends BaseMapTest
     /* Compatibility with "single-elem as array" feature
     /*****************************************************
      */
-    
-    // for [JACKSON-805]
+
     public void testSerializeAsArrayWithSingleProperty() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         mapper.enable(SerializationFeature.WRITE_SINGLE_ELEM_ARRAYS_UNWRAPPED);
@@ -215,6 +224,8 @@ public class TestPOJOAsArray extends BaseMapTest
         ObjectMapper mapper2 = new ObjectMapper();
         mapper2.setAnnotationIntrospector(new ForceArraysIntrospector());
         assertEquals("[[1,2]]", mapper2.writeValueAsString(new A()));
+
+        // and allow reading back, too
     }
 
     public void testWithMaps() throws Exception
@@ -232,9 +243,52 @@ public class TestPOJOAsArray extends BaseMapTest
     {
         // as POJO:
 //        CreatorWithIndex value = MAPPER.readValue(aposToQuotes("{'b':1,'a':2}"),
-        CreatorWithIndex value = MAPPER.readValue(aposToQuotes("[2,1]"),
+        CreatorWithIndex value = MAPPER.readValue(a2q("[2,1]"),
                 CreatorWithIndex.class);
         assertEquals(2, value._a);
         assertEquals(1, value._b);
+    }
+
+    public void testWithConfigOverrides() throws Exception
+    {
+        ObjectMapper mapper = jsonMapperBuilder()
+                .withConfigOverride(NonAnnotatedXY.class,
+                        o -> o.setFormat(JsonFormat.Value.forShape(JsonFormat.Shape.ARRAY)))
+                .build();
+        final String json = mapper.writeValueAsString(new NonAnnotatedXY(2, 3));
+        assertEquals("[2,3]", json);
+
+        // also, read it back
+        NonAnnotatedXY result = mapper.readValue(json, NonAnnotatedXY.class);
+        assertNotNull(result);
+        assertEquals(3, result.y);
+    }
+
+    /*
+    /*****************************************************
+    /* Failure tests
+    /*****************************************************
+     */
+
+    public void testUnknownExtraProp() throws Exception
+    {
+        String json = "{\"value\":[true,\"Foobar\",42,13, false]}";
+        try {
+            MAPPER.readValue(json, PojoAsArrayWrapper.class);
+            fail("should not pass with extra element");
+        } catch (MismatchedInputException e) {
+            verifyException(e, "Unexpected JSON values");
+        }
+
+        // but actually fine if skip-unknown set
+        PojoAsArrayWrapper v = MAPPER.readerFor(PojoAsArrayWrapper.class)
+                .without(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .readValue(json);
+        assertNotNull(v);
+        // note: +1 for both so
+        assertEquals(v.value.x, 42);
+        assertEquals(v.value.y, 13);
+        assertTrue(v.value.complete);
+        assertEquals("Foobar", v.value.name);
     }
 }

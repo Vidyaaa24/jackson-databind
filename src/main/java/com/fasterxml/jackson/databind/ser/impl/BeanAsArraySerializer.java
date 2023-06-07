@@ -1,8 +1,12 @@
 package com.fasterxml.jackson.databind.ser.impl;
 
 import java.io.IOException;
+import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.core.type.WritableTypeId;
+
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
 import com.fasterxml.jackson.databind.ser.BeanPropertyWriter;
@@ -37,7 +41,7 @@ import com.fasterxml.jackson.databind.util.NameTransformer;
  * In cases where array-based output is not feasible, this serializer
  * can instead delegate to the original Object-based serializer; this
  * is why a reference is retained to the original serializer.
- * 
+ *
  * @since 2.1
  */
 public class BeanAsArraySerializer
@@ -47,23 +51,27 @@ public class BeanAsArraySerializer
 
     /**
      * Serializer that would produce JSON Object version; used in
-     * cases where array output can not be used.
+     * cases where array output cannot be used.
      */
     protected final BeanSerializerBase _defaultSerializer;
-    
+
     /*
     /**********************************************************
     /* Life-cycle: constructors
     /**********************************************************
      */
 
-    public BeanAsArraySerializer(BeanSerializerBase src) {    
+    public BeanAsArraySerializer(BeanSerializerBase src) {
         super(src, (ObjectIdWriter) null);
         _defaultSerializer = src;
     }
 
-    protected BeanAsArraySerializer(BeanSerializerBase src, String[] toIgnore) {
-        super(src, toIgnore);
+    protected BeanAsArraySerializer(BeanSerializerBase src, Set<String> toIgnore) {
+        this(src, toIgnore, null);
+    }
+
+    protected BeanAsArraySerializer(BeanSerializerBase src, Set<String> toIgnore, Set<String> toInclude) {
+        super(src, toIgnore, toInclude);
         _defaultSerializer = src;
     }
 
@@ -72,7 +80,7 @@ public class BeanAsArraySerializer
         super(src, oiw, filterId);
         _defaultSerializer = src;
     }
-    
+
     /*
     /**********************************************************
     /* Life-cycle: factory methods, fluent factories
@@ -102,10 +110,18 @@ public class BeanAsArraySerializer
     public BeanSerializerBase withFilterId(Object filterId) {
         return new BeanAsArraySerializer(this, _objectIdWriter, filterId);
     }
-    
-    @Override
-    protected BeanAsArraySerializer withIgnorals(String[] toIgnore) {
-        return new BeanAsArraySerializer(this, toIgnore);
+
+    @Override // @since 2.12
+    protected BeanAsArraySerializer withByNameInclusion(Set<String> toIgnore, Set<String> toInclude) {
+        return new BeanAsArraySerializer(this, toIgnore, toInclude);
+    }
+
+    @Override // @since 2.11.1
+    protected BeanSerializerBase withProperties(BeanPropertyWriter[] properties,
+            BeanPropertyWriter[] filteredProperties) {
+        // 16-Jun-2020, tatu: Added for [databind#2759] but with as-array we
+        //    probably do not want to reorder anything; so actually leave unchanged
+        return this;
     }
 
     @Override
@@ -113,7 +129,7 @@ public class BeanAsArraySerializer
         // already is one, so:
         return this;
     }
-    
+
     /*
     /**********************************************************
     /* JsonSerializer implementation that differs between impls
@@ -133,18 +149,11 @@ public class BeanAsArraySerializer
             _serializeWithObjectId(bean, gen, provider, typeSer);
             return;
         }
-        String typeStr = (_typeId == null) ? null : _customTypeId(bean);
-        if (typeStr == null) {
-            typeSer.writeTypePrefixForArray(bean, gen);
-        } else {
-            typeSer.writeCustomTypePrefixForArray(bean, gen, typeStr);
-        }
+        WritableTypeId typeIdDef = _typeIdDef(typeSer, bean, JsonToken.START_ARRAY);
+        typeSer.writeTypePrefix(gen, typeIdDef);
+        gen.setCurrentValue(bean);
         serializeAsArray(bean, gen, provider);
-        if (typeStr == null) {
-            typeSer.writeTypeSuffixForArray(bean, gen);
-        } else {
-            typeSer.writeCustomTypeSuffixForArray(bean, gen, typeStr);
-        }
+        typeSer.writeTypeSuffix(gen, typeIdDef);
     }
 
     /**
@@ -165,9 +174,7 @@ public class BeanAsArraySerializer
          * any getter, filtering) have already been checked; so code here
          * is trivial.
          */
-        gen.writeStartArray();
-        // [databind#631]: Assign current value, to be accessible by custom serializers
-        gen.setCurrentValue(bean);
+        gen.writeStartArray(bean);
         serializeAsArray(bean, gen, provider);
         gen.writeEndArray();
     }
@@ -208,21 +215,19 @@ public class BeanAsArraySerializer
                     prop.serializeAsElement(bean, gen, provider);
                 }
             }
-            // NOTE: any getters can not be supported either
+            // NOTE: any getters cannot be supported either
             //if (_anyGetterWriter != null) {
             //    _anyGetterWriter.getAndSerialize(bean, gen, provider);
             //}
         } catch (Exception e) {
-            String name = (i == props.length) ? "[anySetter]" : props[i].getName();
-            wrapAndThrow(provider, e, bean, name);
+            wrapAndThrow(provider, e, bean, props[i].getName());
         } catch (StackOverflowError e) {
-            JsonMappingException mapE = JsonMappingException.from(gen, "Infinite recursion (StackOverflowError)", e);
-            String name = (i == props.length) ? "[anySetter]" : props[i].getName();
-            mapE.prependPath(new JsonMappingException.Reference(bean, name));
+            DatabindException mapE = JsonMappingException.from(gen, "Infinite recursion (StackOverflowError)", e);
+            mapE.prependPath(bean, props[i].getName());
             throw mapE;
         }
     }
-    
+
     /*
     /**********************************************************
     /* Standard methods

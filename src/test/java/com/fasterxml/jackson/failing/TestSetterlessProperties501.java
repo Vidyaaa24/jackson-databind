@@ -5,6 +5,7 @@ import java.util.*;
 import com.fasterxml.jackson.annotation.*;
 
 import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.testutil.NoCheckSubTypeValidator;
 
 public class TestSetterlessProperties501
     extends BaseMapTest
@@ -25,7 +26,7 @@ public class TestSetterlessProperties501
             m.put(key, value);
             l.add(value);
         }
-        
+
         @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
         public List<Poly> getList(){
             return l;
@@ -39,20 +40,21 @@ public class TestSetterlessProperties501
 //        public void setMap(Map<String,Poly> m) { this.m = m; }
 //        public void setList(List<Poly> l) { this.l = l; }
     }
-    
+
     /*
     /**********************************************************
     /* Unit tests
     /**********************************************************
      */
 
-    // For [Issue#501]
+    // For [databind#501]
     public void testSetterlessWithPolymorphic() throws Exception
     {
         Issue501Bean input = new Issue501Bean("a", new Poly(13));
         ObjectMapper m = new ObjectMapper();
         assertTrue(m.isEnabled(MapperFeature.USE_GETTERS_AS_SETTERS));
-        m.enableDefaultTyping(ObjectMapper.DefaultTyping.NON_FINAL);
+        m.activateDefaultTyping(NoCheckSubTypeValidator.instance,
+                ObjectMapper.DefaultTyping.NON_FINAL);
 
         String json = m.writerWithDefaultPrettyPrinter().writeValueAsString(input);
 

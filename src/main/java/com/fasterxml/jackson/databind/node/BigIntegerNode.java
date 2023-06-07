@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 /**
  * Numeric node that contains simple 64-bit integer values.
  */
+@SuppressWarnings("serial")
 public class BigIntegerNode
     extends NumericNode
 {
@@ -17,9 +18,9 @@ public class BigIntegerNode
     private final static BigInteger MAX_INTEGER = BigInteger.valueOf(Integer.MAX_VALUE);
     private final static BigInteger MIN_LONG = BigInteger.valueOf(Long.MIN_VALUE);
     private final static BigInteger MAX_LONG = BigInteger.valueOf(Long.MAX_VALUE);
-    
+
     final protected BigInteger _value;
-    
+
     /*
     /**********************************************************
     /* Construction
@@ -30,9 +31,9 @@ public class BigIntegerNode
 
     public static BigIntegerNode valueOf(BigInteger v) { return new BigIntegerNode(v); }
 
-    /* 
+    /*
     /**********************************************************
-    /* Overrridden JsonNode methods
+    /* Overridden JsonNode methods
     /**********************************************************
      */
 
@@ -54,7 +55,7 @@ public class BigIntegerNode
     @Override public boolean canConvertToLong() {
         return (_value.compareTo(MIN_LONG) >= 0) && (_value.compareTo(MAX_LONG) <= 0);
     }
-    
+
     @Override
     public Number numberValue() {
         return _value;
@@ -81,12 +82,12 @@ public class BigIntegerNode
     @Override
     public BigDecimal decimalValue() { return new BigDecimal(_value); }
 
-    /* 
+    /*
     /**********************************************************
     /* General type coercions
     /**********************************************************
      */
-    
+
     @Override
     public String asText() {
         return _value.toString();
@@ -96,12 +97,12 @@ public class BigIntegerNode
     public boolean asBoolean(boolean defaultValue) {
         return !BigInteger.ZERO.equals(_value);
     }
-    
+
     @Override
-    public final void serialize(JsonGenerator jg, SerializerProvider provider)
-        throws IOException, JsonProcessingException
+    public final void serialize(JsonGenerator g, SerializerProvider provider)
+        throws IOException
     {
-        jg.writeNumber(_value);
+        g.writeNumber(_value);
     }
 
     @Override

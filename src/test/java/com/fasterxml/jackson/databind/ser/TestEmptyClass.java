@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.exc.InvalidDefinitionException;
 
 public class TestEmptyClass
     extends BaseMapTest
@@ -15,24 +16,22 @@ public class TestEmptyClass
     @JsonSerialize
     static class EmptyWithAnno { }
 
-    // for [JACKSON-695]:
-
     @JsonSerialize(using=NonZeroSerializer.class)
     static class NonZero {
         public int nr;
-        
+
         public NonZero(int i) { nr = i; }
     }
 
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     static class NonZeroWrapper {
         public NonZero value;
-        
+
         public NonZeroWrapper(int i) {
             value = new NonZero(i);
         }
     }
-    
+
     static class NonZeroSerializer extends JsonSerializer<NonZero>
     {
         @Override
@@ -47,7 +46,7 @@ public class TestEmptyClass
             return (value.nr == 0);
         }
     }
-    
+
     /*
     /**********************************************************
     /* Test methods
@@ -55,7 +54,7 @@ public class TestEmptyClass
      */
 
     protected final ObjectMapper mapper = new ObjectMapper();
-    
+
     /**
      * Test to check that [JACKSON-201] works if there is a recognized
      * annotation (which indicates type is serializable)
@@ -65,7 +64,7 @@ public class TestEmptyClass
         // First: without annotations, should complain
         try {
             serializeAsString(mapper, new Empty());
-        } catch (JsonMappingException e) {
+        } catch (InvalidDefinitionException e) {
             verifyException(e, "No serializer found for class");
         }
 

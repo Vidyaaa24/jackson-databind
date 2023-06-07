@@ -27,73 +27,80 @@ public enum JsonValueFormat
       DDThh:mm:ssZ in UTC time.  This is the recommended form of date/
       timestamp.
 	 */
-	DATE_TIME("date-time"),
+    DATE_TIME("date-time"),
 
-     /**
-      * This SHOULD be an email address.
-      */
-     EMAIL("email"),
+    /**
+     * This SHOULD be an email address.
+     */
+    EMAIL("email"),
 
-     /**
-      * This SHOULD be a host-name.
-      */
-     HOST_NAME("host-name"),
-     
-     /**
-      * This SHOULD be an ip version 4 address.
-      */
-     IP_ADDRESS("ip-address"),
+    /**
+     * This SHOULD be a host-name.
+     */
+    HOST_NAME("host-name"),
 
-     /**
-      * This SHOULD be an ip version 6 address.
-      */
-     IPV6("ipv6"),
+    /**
+     * This SHOULD be an ip version 4 address.
+     */
+    IP_ADDRESS("ip-address"),
 
-     /**
-      * This SHOULD be a phone number (format MAY follow E.123).
-      */
-     PHONE("phone"),
+    /**
+     * This SHOULD be an ip version 6 address.
+     */
+    IPV6("ipv6"),
 
-     /**
-	 * A regular expression, following the regular expression
-  	  specification from ECMA 262/Perl 5.
-	 */
-	REGEX("regex"),
+    /**
+     * This SHOULD be a phone number (format MAY follow E.123).
+     */
+    PHONE("phone"),
 
-	/**
-	 * This is a CSS style definition (like "color: red; background-
-  		color:#FFF"), based on CSS 2.1 [W3C.CR-CSS21-20070719].
-	 */
-	STYLE("style"),
+    /**
+     * A regular expression, following the regular expression
+     * specification from ECMA 262/Perl 5.
+     */
+    REGEX("regex"),
 
-	/**
-      * This SHOULD be a time in the format of hh:mm:ss.  It is
-      recommended that you use the "date-time" format instead of "time"
-      unless you need to transfer only the time part.
-      */
-     TIME("time"),
+    /**
+     * This is a CSS style definition (like "color: red; background-
+  	* color:#FFF"), based on CSS 2.1 [W3C.CR-CSS21-20070719].
+  	*/
+    STYLE("style"),
 
-	/**
-	 * This value SHOULD be a URI..
-	 */
-	URI("uri"),
+    /**
+     * This SHOULD be a time in the format of hh:mm:ss.  It is
+     * recommended that you use the "date-time" format instead of "time"
+     * unless you need to transfer only the time part.
+     */
+    TIME("time"),
 
-     /**
-      * This SHOULD be the difference, measured in
+    /**
+     * This value SHOULD be a URI.
+     */
+    URI("uri"),
+
+    /**
+     * This SHOULD be the difference, measured in
       milliseconds, between the specified time and midnight, 00:00 of
       January 1, 1970 UTC.  The value SHOULD be a number (integer or
       float).
-      */
-     UTC_MILLISEC("utc-millisec"),
-	;
+     */
+    UTC_MILLISEC("utc-millisec"),
 
-	private final String _desc;
-	
-	private JsonValueFormat(String desc) {
-	    _desc = desc;
-	}
+    /**
+     * Value should be valid <a href="https://en.wikipedia.org/wiki/Universally_unique_identifier">UUID</a>
+     *
+     * @since 2.10
+     */
+    UUID("uuid")
+    ;
 
-     @Override
-     @JsonValue // since 2.7
-     public String toString() { return _desc; }
+    private final String _desc;
+
+    private JsonValueFormat(String desc) {
+        _desc = desc;
+    }
+
+    @Override
+    @JsonValue // since 2.7
+    public String toString() { return _desc; }
 }

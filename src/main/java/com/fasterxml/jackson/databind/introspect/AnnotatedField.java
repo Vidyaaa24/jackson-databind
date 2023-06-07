@@ -18,7 +18,7 @@ public final class AnnotatedField
     /**
      * Actual {@link Field} used for access.
      *<p>
-     * Transient since it can not be persisted directly using
+     * Transient since it cannot be persisted directly using
      * JDK serialization
      */
     protected final transient Field _field;
@@ -39,7 +39,7 @@ public final class AnnotatedField
         super(contextClass, annMap);
         _field = field;
     }
-    
+
     @Override
     public AnnotatedField withAnnotations(AnnotationMap ann) {
         return new AnnotatedField(_typeContext, _field, ann);
@@ -54,7 +54,7 @@ public final class AnnotatedField
         _field = null;
         _serialization = ser;
     }
-    
+
     /*
     /**********************************************************
     /* Annotated impl
@@ -113,16 +113,12 @@ public final class AnnotatedField
                     +getFullName()+": "+e.getMessage(), e);
         }
     }
-    
+
     /*
     /**********************************************************
     /* Extended API, generic
     /**********************************************************
      */
-
-    public String getFullName() {
-        return getDeclaringClass().getName() + "#" + getName();
-    }
 
     public int getAnnotationCount() { return _annotations.size(); }
 
@@ -130,17 +126,25 @@ public final class AnnotatedField
      * @since 2.6
      */
     public boolean isTransient() { return Modifier.isTransient(getModifiers()); }
-    
+
     @Override
     public int hashCode() {
         return _field.getName().hashCode();
     }
-    
+
     @Override
     public boolean equals(Object o) {
         if (o == this) return true;
-        if (o == null || o.getClass() != getClass()) return false;
-        return ((AnnotatedField) o)._field == _field;
+        if (!ClassUtil.hasClass(o, getClass())) {
+            return false;
+        }
+
+        AnnotatedField other = (AnnotatedField) o;
+        if (other._field == null) {
+            return _field == null;
+        } else {
+            return other._field.equals(_field);
+        }
     }
 
     @Override
@@ -172,7 +176,7 @@ public final class AnnotatedField
                         +"' from Class '"+clazz.getName());
         }
     }
-    
+
     /**
      * Helper class that is used as the workaround to persist
      * Field references. It basically just stores declaring class
@@ -188,7 +192,7 @@ public final class AnnotatedField
         public Serialization(Field f) {
             clazz = f.getDeclaringClass();
             name = f.getName();
-            
+
         }
     }
 }

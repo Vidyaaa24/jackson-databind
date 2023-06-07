@@ -1,18 +1,12 @@
 package com.fasterxml.jackson.databind.objectid;
 
-import com.fasterxml.jackson.annotation.JsonIdentityInfo;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.annotation.JsonTypeInfo.As;
 import com.fasterxml.jackson.annotation.JsonTypeInfo.Id;
-import com.fasterxml.jackson.annotation.ObjectIdGenerator;
+
 import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.BaseMapTest;
-import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.JsonDeserializer;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
+import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
 import java.io.IOException;
@@ -29,7 +23,7 @@ public class JSOGDeserialize622Test extends BaseMapTest
     /**
      * JSON input
      */
-    private static final String EXP_EXAMPLE_JSOG =  aposToQuotes(
+    private static final String EXP_EXAMPLE_JSOG =  a2q(
             "{'@id':'1','foo':66,'next':{'"+REF_KEY+"':'1'}}");
 
     /**
@@ -97,14 +91,14 @@ public class JSOGDeserialize622Test extends BaseMapTest
     static class JSOGRefDeserializer extends JsonDeserializer<JSOGRef>
     {
       @Override
-      public JSOGRef deserialize(JsonParser jp, DeserializationContext ctx) throws IOException {
-          JsonNode node = jp.readValueAsTree();
+      public JSOGRef deserialize(JsonParser p, DeserializationContext ctx) throws IOException {
+          JsonNode node = p.readValueAsTree();
           if (node.isTextual()) {
               return new JSOGRef(node.asInt());
           }
           JsonNode n = node.get(REF_KEY);
           if (n == null) {
-              throw JsonMappingException.from(jp, "Could not find key '"+REF_KEY
+              ctx.reportInputMismatch(JSOGRef.class, "Could not find key '"+REF_KEY
                       +"' from ("+node.getClass().getName()+"): "+node);
           }
           return new JSOGRef(n.asInt());
@@ -133,7 +127,7 @@ public class JSOGDeserialize622Test extends BaseMapTest
         public int hashCode() {
             return ref;
         }
-        
+
         @Override
         public boolean equals(Object other) {
             return (other instanceof JSOGRef)
@@ -192,7 +186,7 @@ public class JSOGDeserialize622Test extends BaseMapTest
         public Inner inner1;
         public Inner inner2;
     }
-    
+
     /*
     /**********************************************************************
     /* Test methods
@@ -200,7 +194,7 @@ public class JSOGDeserialize622Test extends BaseMapTest
      */
 
     private final ObjectMapper MAPPER = new ObjectMapper();
-    
+
     // Basic for [databind#622]
     public void testStructJSOGRef() throws Exception
     {
@@ -238,7 +232,7 @@ public class JSOGDeserialize622Test extends BaseMapTest
         outer.inner1 = outer.inner2 = new SubInner("bar", "extra");
 
         String jsog = MAPPER.writeValueAsString(outer);
-        
+
         Outer back = MAPPER.readValue(jsog, Outer.class);
 
         assertSame(back.inner1, back.inner2);

@@ -1,7 +1,6 @@
 package com.fasterxml.jackson.databind.deser;
 
 import java.util.HashMap;
-import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.*;
@@ -10,6 +9,7 @@ import com.fasterxml.jackson.databind.introspect.Annotated;
 import com.fasterxml.jackson.databind.type.*;
 import com.fasterxml.jackson.databind.util.ClassUtil;
 import com.fasterxml.jackson.databind.util.Converter;
+import com.fasterxml.jackson.databind.util.LRUMap;
 
 /**
  * Class that defines caching layer between callers (like
@@ -19,7 +19,7 @@ import com.fasterxml.jackson.databind.util.Converter;
  * ({@link com.fasterxml.jackson.databind.deser.DeserializerFactory}).
  */
 public final class DeserializerCache
-    implements java.io.Serializable // since 2.1 -- needs to be careful tho
+    implements java.io.Serializable // since 2.1
 {
     private static final long serialVersionUID = 1L;
 
@@ -32,15 +32,9 @@ public final class DeserializerCache
     /**
      * We will also cache some dynamically constructed deserializers;
      * specifically, ones that are expensive to construct.
-     * This currently means bean and Enum deserializers; starting with
-     * 2.5, container deserializers will also be cached.
-     *<p>
-     * Given that we don't expect much concurrency for additions
-     * (should very quickly converge to zero after startup), let's
-     * define a relatively low concurrency setting.
+     * This currently means bean, Enum and container deserializers.
      */
-    final protected ConcurrentHashMap<JavaType, JsonDeserializer<Object>> _cachedDeserializers
-        = new ConcurrentHashMap<JavaType, JsonDeserializer<Object>>(64, 0.75f, 4);
+    final protected LRUMap<JavaType, JsonDeserializer<Object>> _cachedDeserializers;
 
     /**
      * During deserializer construction process we may need to keep track of partially
@@ -56,7 +50,14 @@ public final class DeserializerCache
     /**********************************************************
      */
 
-    public DeserializerCache() { }
+    public DeserializerCache() {
+        this(2000); // see [databind#1995]
+    }
+
+    public DeserializerCache(int maxSize) {
+        int initial = Math.min(64, maxSize>>2);
+        _cachedDeserializers = new LRUMap<>(initial, maxSize);
+    }
 
     /*
     /**********************************************************
@@ -67,10 +68,9 @@ public final class DeserializerCache
     Object writeReplace() {
         // instead of making this transient, just clear it:
         _incompleteDeserializers.clear();
-        // TODO: clear out "cheap" cached deserializers?
         return this;
     }
-    
+
     /*
     /**********************************************************
     /* Access to caching aspects
@@ -79,7 +79,7 @@ public final class DeserializerCache
 
     /**
      * Method that can be used to determine how many deserializers this
-     * provider is caching currently 
+     * provider is caching currently
      * (if it does caching: default implementation does)
      * Exact count depends on what kind of deserializers get cached;
      * default implementation caches only dynamically constructed deserializers,
@@ -101,7 +101,7 @@ public final class DeserializerCache
      * configuration changes for mapper than owns the provider.
      */
     public void flushCachedDeserializers() {
-        _cachedDeserializers.clear();       
+        _cachedDeserializers.clear();
     }
 
     /*
@@ -204,7 +204,7 @@ public final class DeserializerCache
         if (type == null) {
             throw new IllegalArgumentException("Null JavaType passed");
         }
-        if (_hasCustomValueHandler(type)) {
+        if (_hasCustomHandlers(type)) {
             return null;
         }
         return _cachedDeserializers.get(type);
@@ -213,7 +213,7 @@ public final class DeserializerCache
     /**
      * Method that will try to create a deserializer for given type,
      * and resolve and cache it if necessary
-     * 
+     *
      * @param ctxt Currently active deserialization context
      * @param type Type of property to deserialize
      */
@@ -263,10 +263,10 @@ public final class DeserializerCache
         try {
             deser = _createDeserializer(ctxt, factory, type);
         } catch (IllegalArgumentException iae) {
-            /* We better only expose checked exceptions, since those
-             * are what caller is expected to handle
-             */
-            throw JsonMappingException.from(ctxt, iae.getMessage(), iae);
+            // We better only expose checked exceptions, since those
+            // are what caller is expected to handle
+            ctxt.reportBadDefinition(type, ClassUtil.exceptionMessage(iae));
+            deser = null; // never gets here
         }
         if (deser == null) {
             return null;
@@ -274,10 +274,8 @@ public final class DeserializerCache
         /* cache resulting deserializer? always true for "plain" BeanDeserializer
          * (but can be re-defined for sub-classes by using @JsonCachable!)
          */
-        // 08-Jun-2010, tatu: Related to [JACKSON-296], need to avoid caching MapSerializers... so:
-        boolean isResolvable = (deser instanceof ResolvableDeserializer);
         // 27-Mar-2015, tatu: As per [databind#735], avoid caching types with custom value desers
-        boolean addToCache = !_hasCustomValueHandler(type) && deser.isCachable();
+        boolean addToCache = !_hasCustomHandlers(type) && deser.isCachable();
 
         /* we will temporarily hold on to all created deserializers (to
          * handle cyclic references, and possibly reuse non-cached
@@ -291,7 +289,7 @@ public final class DeserializerCache
         /* Need to resolve? Mostly done for bean deserializers; required for
          * resolving cyclic references.
          */
-        if (isResolvable) {
+        if (deser instanceof ResolvableDeserializer) {
             _incompleteDeserializers.put(type, deser);
             ((ResolvableDeserializer)deser).resolve(ctxt);
             _incompleteDeserializers.remove(type);
@@ -307,7 +305,7 @@ public final class DeserializerCache
     /* Helper methods for actual construction of deserializers
     /**********************************************************
      */
-    
+
     /**
      * Method that does the heavy lifting of checking for per-type annotations,
      * find out full type, and figure out which actual factory method
@@ -353,7 +351,7 @@ public final class DeserializerCache
         }
         // otherwise need to do bit of introspection
         JavaType delegateType = conv.getInputType(ctxt.getTypeFactory());
-        // One more twist, as per [Issue#288]; probably need to get new BeanDesc
+        // One more twist, as per [databind#288]; probably need to get new BeanDesc
         if (!delegateType.hasRawClass(type.getRawClass())) {
             beanDesc = config.introspect(delegateType);
         }
@@ -366,7 +364,10 @@ public final class DeserializerCache
         throws JsonMappingException
     {
         final DeserializationConfig config = ctxt.getConfig();
-        // If not, let's see which factory method to use:
+        // If not, let's see which factory method to use
+
+        // 12-Feb-20202, tatu: Need to ensure that not only all Enum implementations get
+        //    there, but also `Enum` -- latter wrt [databind#2605], polymorphic usage
         if (type.isEnumType()) {
             return factory.createEnumDeserializer(ctxt, type, beanDesc);
         }
@@ -375,22 +376,30 @@ public final class DeserializerCache
                 return factory.createArrayDeserializer(ctxt, (ArrayType) type, beanDesc);
             }
             if (type.isMapLikeType()) {
-                MapLikeType mlt = (MapLikeType) type;
-                if (mlt.isTrueMapType()) {
-                    return factory.createMapDeserializer(ctxt,(MapType) mlt, beanDesc);
+                // 11-Mar-2017, tatu: As per [databind#1554], also need to block
+                //    handling as Map if overriden with "as POJO" option.
+                // Ideally we'd determine it bit later on (to allow custom handler checks)
+                // but that won't work for other reasons. So do it here.
+                // (read: rewrite for 3.0)
+                JsonFormat.Value format = beanDesc.findExpectedFormat(null);
+                if (format.getShape() != JsonFormat.Shape.OBJECT) {
+                    MapLikeType mlt = (MapLikeType) type;
+                    if (mlt instanceof MapType) {
+                        return factory.createMapDeserializer(ctxt,(MapType) mlt, beanDesc);
+                    }
+                    return factory.createMapLikeDeserializer(ctxt, mlt, beanDesc);
                 }
-                return factory.createMapLikeDeserializer(ctxt, mlt, beanDesc);
             }
             if (type.isCollectionLikeType()) {
-                /* 03-Aug-2012, tatu: As per [Issue#40], one exception is if shape
+                /* 03-Aug-2012, tatu: As per [databind#40], one exception is if shape
                  *   is to be Shape.OBJECT. Ideally we'd determine it bit later on
                  *   (to allow custom handler checks), but that won't work for other
                  *   reasons. So do it here.
                  */
                 JsonFormat.Value format = beanDesc.findExpectedFormat(null);
-                if (format == null || format.getShape() != JsonFormat.Shape.OBJECT) {
+                if (format.getShape() != JsonFormat.Shape.OBJECT) {
                     CollectionLikeType clt = (CollectionLikeType) type;
-                    if (clt.isTrueCollectionType()) {
+                    if (clt instanceof CollectionType) {
                         return factory.createCollectionDeserializer(ctxt, (CollectionType) clt, beanDesc);
                     }
                     return factory.createCollectionLikeDeserializer(ctxt, clt, beanDesc);
@@ -451,7 +460,7 @@ public final class DeserializerCache
             return null;
         }
         return ctxt.converterInstance(a, convDef);
-    }    
+    }
     /**
      * Method called to see if given method has annotations that indicate
      * a more specific type than what the argument specifies.
@@ -491,10 +500,10 @@ public final class DeserializerCache
                     KeyDeserializer kd = ctxt.keyDeserializerInstance(a, kdDef);
                     if (kd != null) {
                         type = ((MapLikeType) type).withKeyValueHandler(kd);
-                        keyType = type.getKeyType(); // just in case it's used below
+                        // keyType = type.getKeyType(); // just in case it's used below
                     }
                 }
-            }            
+            }
         }
         JavaType contentType = type.getContentType();
         if (contentType != null) {
@@ -503,7 +512,7 @@ public final class DeserializerCache
                 if (cdDef != null) {
                     JsonDeserializer<?> cd = null;
                     if (cdDef instanceof JsonDeserializer<?>) {
-                        cdDef = (JsonDeserializer<?>) cdDef;
+                        cd = (JsonDeserializer<?>) cdDef;
                     } else {
                         Class<?> cdClass = _verifyAsClass(cdDef, "findContentDeserializer", JsonDeserializer.None.class);
                         if (cdClass != null) {
@@ -520,7 +529,7 @@ public final class DeserializerCache
         // And after handlers, possible type refinements
         // (note: could possibly avoid this if explicit deserializer was invoked?)
         type = intr.refineDeserializationType(ctxt.getConfig(), a, type);
-        
+
         return type;
     }
 
@@ -534,13 +543,23 @@ public final class DeserializerCache
      * Helper method used to prevent both caching and cache lookups for structured
      * types that have custom value handlers
      *
-     * @since 2.4.6
+     * @since 2.8.11
      */
-    private boolean _hasCustomValueHandler(JavaType t) {
+    private boolean _hasCustomHandlers(JavaType t) {
         if (t.isContainerType()) {
+            // First: value types may have both value and type handlers
             JavaType ct = t.getContentType();
             if (ct != null) {
-                return (ct.getValueHandler() != null) || (ct.getTypeHandler() != null);
+                if ((ct.getValueHandler() != null) || (ct.getTypeHandler() != null)) {
+                    return true;
+                }
+            }
+            // Second: map(-like) types may have value handler for key (but not type; keys are untyped)
+            if (t.isMapLikeType()) {
+                JavaType kt = t.getKeyType();
+                if (kt.getValueHandler() != null) {
+                    return true;
+                }
             }
         }
         return false;
@@ -567,23 +586,20 @@ public final class DeserializerCache
     /**********************************************************
      */
 
-    // NOTE: changed 2.6 -> 2.7 to pass context; no way to make backwards compatible
     protected JsonDeserializer<Object> _handleUnknownValueDeserializer(DeserializationContext ctxt, JavaType type)
-            throws JsonMappingException
+        throws JsonMappingException
     {
-        /* Let's try to figure out the reason, to give better error
-         * messages
-         */
+        // Let's try to figure out the reason, to give better error messages
         Class<?> rawClass = type.getRawClass();
         if (!ClassUtil.isConcrete(rawClass)) {
-            throw JsonMappingException.from(ctxt, "Can not find a Value deserializer for abstract type "+type);
+            return ctxt.reportBadDefinition(type, "Cannot find a Value deserializer for abstract type "+type);
         }
-        throw JsonMappingException.from(ctxt, "Can not find a Value deserializer for type "+type);
+        return ctxt.reportBadDefinition(type, "Cannot find a Value deserializer for type "+type);
     }
 
     protected KeyDeserializer _handleUnknownKeyDeserializer(DeserializationContext ctxt, JavaType type)
         throws JsonMappingException
     {
-        throw JsonMappingException.from(ctxt, "Can not find a (Map) Key deserializer for type "+type);
+        return ctxt.reportBadDefinition(type, "Cannot find a (Map) Key deserializer for type "+type);
     }
 }

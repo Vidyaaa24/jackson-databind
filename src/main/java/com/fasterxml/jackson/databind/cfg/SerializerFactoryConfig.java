@@ -19,7 +19,7 @@ public final class SerializerFactoryConfig
     protected final static Serializers[] NO_SERIALIZERS = new Serializers[0];
 
     protected final static BeanSerializerModifier[] NO_MODIFIERS = new BeanSerializerModifier[0];
-    
+
     /**
      * List of providers for additional serializers, checked before considering default
      * basic or bean serialializers.
@@ -31,13 +31,13 @@ public final class SerializerFactoryConfig
      * key serialializers.
      */
     protected final Serializers[] _additionalKeySerializers;
-    
+
     /**
      * List of modifiers that can change the way {@link BeanSerializer} instances
      * are configured and constructed.
      */
     protected final BeanSerializerModifier[] _modifiers;
-    
+
     public SerializerFactoryConfig() {
         this(null, null, null);
     }
@@ -56,7 +56,7 @@ public final class SerializerFactoryConfig
     public SerializerFactoryConfig withAdditionalSerializers(Serializers additional)
     {
         if (additional == null) {
-            throw new IllegalArgumentException("Can not pass null Serializers");
+            throw new IllegalArgumentException("Cannot pass null Serializers");
         }
         Serializers[] all = ArrayBuilders.insertInListNoDup(_additionalSerializers, additional);
         return new SerializerFactoryConfig(all, _additionalKeySerializers, _modifiers);
@@ -65,16 +65,16 @@ public final class SerializerFactoryConfig
     public SerializerFactoryConfig withAdditionalKeySerializers(Serializers additional)
     {
         if (additional == null) {
-            throw new IllegalArgumentException("Can not pass null Serializers");
+            throw new IllegalArgumentException("Cannot pass null Serializers");
         }
         Serializers[] all = ArrayBuilders.insertInListNoDup(_additionalKeySerializers, additional);
         return new SerializerFactoryConfig(_additionalSerializers, all, _modifiers);
     }
-    
+
     public SerializerFactoryConfig withSerializerModifier(BeanSerializerModifier modifier)
     {
         if (modifier == null) {
-            throw new IllegalArgumentException("Can not pass null modifier");
+            throw new IllegalArgumentException("Cannot pass null modifier");
         }
         BeanSerializerModifier[] modifiers = ArrayBuilders.insertInListNoDup(_modifiers, modifier);
         return new SerializerFactoryConfig(_additionalSerializers, _additionalKeySerializers, modifiers);

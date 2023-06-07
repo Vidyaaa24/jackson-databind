@@ -1,10 +1,14 @@
 package com.fasterxml.jackson.databind.type;
 
 import java.io.IOException;
+import java.lang.reflect.TypeVariable;
 import java.util.*;
 
 import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.JsonToken;
+
+import com.fasterxml.jackson.core.type.WritableTypeId;
+
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
 
@@ -20,7 +24,7 @@ public abstract class TypeBase
     protected final JavaType _superClass;
 
     protected final JavaType[] _superInterfaces;
-    
+
     /**
      * Bindings in effect for this type instance; possibly empty.
      * Needed when resolving types declared in members of this type
@@ -29,7 +33,7 @@ public abstract class TypeBase
      * @since 2.7
      */
     protected final TypeBindings _bindings;
-    
+
     /**
      * Lazily initialized external representation of the type
      */
@@ -79,14 +83,6 @@ public abstract class TypeBase
 
     @Override
     public abstract StringBuilder getErasedSignature(StringBuilder sb);
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public <T> T getValueHandler() { return (T) _valueHandler; }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public <T> T getTypeHandler() { return (T) _typeHandler; }
 
     @Override
     public TypeBindings getBindings() {
@@ -162,7 +158,7 @@ public abstract class TypeBase
         }
         return match.getBindings().typeParameterArray();
     }
-    
+
     /*
     /**********************************************************
     /* JsonSerializable base implementation
@@ -170,21 +166,22 @@ public abstract class TypeBase
      */
 
     @Override
-    public void serializeWithType(JsonGenerator gen, SerializerProvider provider,
+    public void serializeWithType(JsonGenerator g, SerializerProvider provider,
             TypeSerializer typeSer)
-        throws IOException, JsonProcessingException
+        throws IOException
     {
-        typeSer.writeTypePrefixForScalar(this, gen);
-        this.serialize(gen, provider);
-        typeSer.writeTypeSuffixForScalar(this, gen);
+        WritableTypeId typeIdDef = new WritableTypeId(this, JsonToken.VALUE_STRING);
+        typeSer.writeTypePrefix(g, typeIdDef);
+        this.serialize(g, provider);
+        typeSer.writeTypeSuffix(g, typeIdDef);
     }
 
     @Override
     public void serialize(JsonGenerator gen, SerializerProvider provider)
-            throws IOException, JsonProcessingException
+        throws IOException
     {
         gen.writeString(toCanonical());
-    } 
+    }
 
     /*
     /**********************************************************
@@ -200,7 +197,7 @@ public abstract class TypeBase
            boolean trailingSemicolon)
     {
         if (cls.isPrimitive()) {
-            if (cls == Boolean.TYPE) {                
+            if (cls == Boolean.TYPE) {
                 sb.append('Z');
             } else if (cls == Byte.TYPE) {
                 sb.append('B');
@@ -258,5 +255,10 @@ public abstract class TypeBase
             return null;
         }
         return TypeFactory.unknownType();
+    }
+
+    protected boolean _hasNTypeParameters(int count) {
+        TypeVariable<?>[] params = _class.getTypeParameters();
+        return (params.length == count);
     }
 }

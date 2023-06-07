@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ser.std.BeanSerializerBase;
 import com.fasterxml.jackson.databind.util.NameTransformer;
 
 import java.io.IOException;
+import java.util.Set;
 
 public class UnwrappingBeanSerializer
     extends BeanSerializerBase
@@ -21,7 +22,7 @@ public class UnwrappingBeanSerializer
      * of unwrapped POJO.
      */
     protected final NameTransformer _nameTransformer;
-    
+
     /*
     /**********************************************************
     /* Life-cycle: constructors
@@ -49,8 +50,19 @@ public class UnwrappingBeanSerializer
         _nameTransformer = src._nameTransformer;
     }
 
-    protected UnwrappingBeanSerializer(UnwrappingBeanSerializer src, String[] toIgnore) {
-        super(src, toIgnore);
+    protected UnwrappingBeanSerializer(UnwrappingBeanSerializer src, Set<String> toIgnore) {
+        this(src, toIgnore, null);
+    }
+
+    protected UnwrappingBeanSerializer(UnwrappingBeanSerializer src, Set<String> toIgnore, Set<String> toInclude) {
+        super(src, toIgnore, toInclude);
+        _nameTransformer = src._nameTransformer;
+    }
+
+    // @since 2.11.1
+    protected UnwrappingBeanSerializer(UnwrappingBeanSerializer src,
+            BeanPropertyWriter[] properties, BeanPropertyWriter[] filteredProperties) {
+        super(src, properties, filteredProperties);
         _nameTransformer = src._nameTransformer;
     }
 
@@ -81,20 +93,26 @@ public class UnwrappingBeanSerializer
         return new UnwrappingBeanSerializer(this, _objectIdWriter, filterId);
     }
 
-    @Override
-    protected BeanSerializerBase withIgnorals(String[] toIgnore) {
-        return new UnwrappingBeanSerializer(this, toIgnore);
+    @Override // @since 2.12
+    protected BeanSerializerBase withByNameInclusion(Set<String> toIgnore, Set<String> toInclude) {
+        return new UnwrappingBeanSerializer(this, toIgnore, toInclude);
+    }
+
+    @Override // @since 2.11.1
+    protected BeanSerializerBase withProperties(BeanPropertyWriter[] properties,
+            BeanPropertyWriter[] filteredProperties) {
+        return new UnwrappingBeanSerializer(this, properties, filteredProperties);
     }
 
     /**
-     * JSON Array output can not be done if unwrapping operation is
+     * JSON Array output cannot be done if unwrapping operation is
      * requested; so implementation will simply return 'this'.
      */
     @Override
     protected BeanSerializerBase asArraySerializer() {
         return this;
     }
-    
+
     /*
     /**********************************************************
     /* JsonSerializer implementation that differs between impls
@@ -120,16 +138,15 @@ public class UnwrappingBeanSerializer
             serializeFields(bean, gen, provider);
         }
     }
-    
+
     @Override
     public void serializeWithType(Object bean, JsonGenerator gen, SerializerProvider provider,
     		TypeSerializer typeSer) throws IOException
     {
         if (provider.isEnabled(SerializationFeature.FAIL_ON_UNWRAPPED_TYPE_IDENTIFIERS)) {
-            throw JsonMappingException.from(gen,
-                    "Unwrapped property requires use of type information: can not serialize without disabling `SerializationFeature.FAIL_ON_UNWRAPPED_TYPE_IDENTIFIERS`");
+            provider.reportBadDefinition(handledType(),
+                    "Unwrapped property requires use of type information: cannot serialize without disabling `SerializationFeature.FAIL_ON_UNWRAPPED_TYPE_IDENTIFIERS`");
         }
-
         gen.setCurrentValue(bean); // [databind#631]
         if (_objectIdWriter != null) {
             _serializeWithObjectId(bean, gen, provider, typeSer);

@@ -39,20 +39,27 @@ public abstract class ClassIntrospector
          * <code>ObjectMapper</code> instance, and one that should not be connected
          * to this instance, if resolver has mutable state.
          * If resolver is immutable may simply return `this`.
-         * 
+         *
          * @since 2.6
          */
         public MixInResolver copy();
     }
 
     protected ClassIntrospector() { }
-	
+
+    /**
+     * Method that may be needed when `copy()`ing `ObjectMapper` instances.
+     *
+     * @since 2.9.6
+     */
+    public abstract ClassIntrospector copy();
+
     /*
     /**********************************************************
     /* Public API: factory methods
     /**********************************************************
      */
-    
+
     /**
      * Factory method that constructs an introspector that has all
      * information needed for serialization purposes.
@@ -71,10 +78,19 @@ public abstract class ClassIntrospector
      * Factory method that constructs an introspector that has all
      * information needed for constructing deserializers that use
      * intermediate Builder objects.
+     *
+     * @since 2.12
      */
     public abstract BeanDescription forDeserializationWithBuilder(DeserializationConfig cfg,
-    		JavaType type, MixInResolver r);
-    
+            JavaType builderType, MixInResolver r, BeanDescription valueTypeDesc);
+
+    /**
+     * @deprecated Since 2.12 use overload that take value type description
+     */
+    @Deprecated
+    public abstract BeanDescription forDeserializationWithBuilder(DeserializationConfig cfg,
+            JavaType builderType, MixInResolver r);
+
     /**
      * Factory method that constructs an introspector that has
      * information necessary for creating instances of given
@@ -100,4 +116,3 @@ public abstract class ClassIntrospector
     public abstract BeanDescription forDirectClassAnnotations(MapperConfig<?> cfg, JavaType type,
             MixInResolver r);
 }
-

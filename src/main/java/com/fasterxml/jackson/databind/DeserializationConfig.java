@@ -1,20 +1,15 @@
 package com.fasterxml.jackson.databind;
 
-import java.text.DateFormat;
 import java.util.*;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.*;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.cfg.*;
 import com.fasterxml.jackson.databind.deser.DeserializationProblemHandler;
 import com.fasterxml.jackson.databind.introspect.*;
 import com.fasterxml.jackson.databind.jsontype.*;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.type.TypeFactory;
+import com.fasterxml.jackson.databind.type.LogicalType;
 import com.fasterxml.jackson.databind.util.LinkedNode;
 import com.fasterxml.jackson.databind.util.RootNameLookup;
 
@@ -31,30 +26,43 @@ public final class DeserializationConfig
     extends MapperConfigBase<DeserializationFeature, DeserializationConfig>
     implements java.io.Serializable // since 2.1
 {
-    // since 2.5
-    private static final long serialVersionUID = 1;
+    // since 2.9
+    private static final long serialVersionUID = 2;
+
+    // since 2.10.1
+    private final static int DESER_FEATURE_DEFAULTS = collectFeatureDefaults(DeserializationFeature.class);
 
     /*
     /**********************************************************
     /* Configured helper objects
     /**********************************************************
      */
-    
+
     /**
      * Linked list that contains all registered problem handlers.
      * Implementation as front-added linked list allows for sharing
      * of the list (tail) without copying the list.
      */
     protected final LinkedNode<DeserializationProblemHandler> _problemHandlers;
-    
+
     /**
      * Factory used for constructing {@link com.fasterxml.jackson.databind.JsonNode} instances.
      */
     protected final JsonNodeFactory _nodeFactory;
 
+    /**
+     * @since 2.12
+     */
+    protected final CoercionConfigs _coercionConfigs;
+
+    /**
+     * @since 2.12
+     */
+    protected final ConstructorDetector _ctorDetector;
+
     /*
     /**********************************************************
-    /* Deserialization features 
+    /* Deserialization features
     /**********************************************************
      */
 
@@ -62,13 +70,13 @@ public final class DeserializationConfig
      * Set of {@link DeserializationFeature}s enabled.
      */
     protected final int _deserFeatures;
-    
+
     /*
     /**********************************************************
     /* Parser features: generic, format-specific
     /**********************************************************
      */
-    
+
     /**
      * States of {@link com.fasterxml.jackson.core.JsonParser.Feature}s to enable/disable.
      */
@@ -95,42 +103,78 @@ public final class DeserializationConfig
 
     /*
     /**********************************************************
-    /* Life-cycle, constructors
+    /* Life-cycle, primary constructors for new instances
     /**********************************************************
      */
 
     /**
      * Constructor used by ObjectMapper to create default configuration object instance.
+     *
+     * @since 2.14
      */
     public DeserializationConfig(BaseSettings base,
-            SubtypeResolver str, SimpleMixInResolver mixins,
-            RootNameLookup rootNames)
+            SubtypeResolver str, SimpleMixInResolver mixins, RootNameLookup rootNames,
+            ConfigOverrides configOverrides, CoercionConfigs coercionConfigs,
+            DatatypeFeatures datatypeFeatures)
     {
-        super(base, str, mixins, rootNames);
-        _deserFeatures = collectFeatureDefaults(DeserializationFeature.class);
-        _nodeFactory = JsonNodeFactory.instance;
+        super(base, str, mixins, rootNames, configOverrides, datatypeFeatures);
+        _deserFeatures = DESER_FEATURE_DEFAULTS;
         _problemHandlers = null;
+        _nodeFactory = JsonNodeFactory.instance;
+        _ctorDetector = null;
+        _coercionConfigs = coercionConfigs;
         _parserFeatures = 0;
         _parserFeaturesToChange = 0;
         _formatReadFeatures = 0;
         _formatReadFeaturesToChange = 0;
     }
 
+    /**
+     * Copy-constructor used for making a copy used by new {@link ObjectMapper}.
+     *
+     * @since 2.14
+     */
+    protected DeserializationConfig(DeserializationConfig src,
+            SubtypeResolver str, SimpleMixInResolver mixins, RootNameLookup rootNames,
+            ConfigOverrides configOverrides,
+            CoercionConfigs coercionConfigs)
+    {
+        super(src, str, mixins, rootNames, configOverrides);
+        _deserFeatures = src._deserFeatures;
+        _problemHandlers = src._problemHandlers;
+        _nodeFactory = src._nodeFactory;
+        _ctorDetector = src._ctorDetector;
+        _coercionConfigs = coercionConfigs;
+        _parserFeatures = src._parserFeatures;
+        _parserFeaturesToChange = src._parserFeaturesToChange;
+        _formatReadFeatures = src._formatReadFeatures;
+        _formatReadFeaturesToChange = src._formatReadFeaturesToChange;
+    }
+
+    /*
+    /**********************************************************
+    /* Life-cycle, secondary constructors to support
+    /* "mutant factories", with single property changes
+    /**********************************************************
+     */
+
     private DeserializationConfig(DeserializationConfig src,
-            int mapperFeatures, int deserFeatures,
+            long mapperFeatures, int deserFeatures,
             int parserFeatures, int parserFeatureMask,
             int formatFeatures, int formatFeatureMask)
     {
         super(src, mapperFeatures);
         _deserFeatures = deserFeatures;
-        _nodeFactory = src._nodeFactory;
         _problemHandlers = src._problemHandlers;
+        _nodeFactory = src._nodeFactory;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = src._ctorDetector;
         _parserFeatures = parserFeatures;
         _parserFeaturesToChange = parserFeatureMask;
         _formatReadFeatures = formatFeatures;
         _formatReadFeaturesToChange = formatFeatureMask;
     }
-    
+
     /**
      * Copy constructor used to create a non-shared instance with given mix-in
      * annotation definitions and subtype resolver.
@@ -139,8 +183,10 @@ public final class DeserializationConfig
     {
         super(src, str);
         _deserFeatures = src._deserFeatures;
-        _nodeFactory = src._nodeFactory;
         _problemHandlers = src._problemHandlers;
+        _nodeFactory = src._nodeFactory;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = src._ctorDetector;
         _parserFeatures = src._parserFeatures;
         _parserFeaturesToChange = src._parserFeaturesToChange;
         _formatReadFeatures = src._formatReadFeatures;
@@ -151,20 +197,39 @@ public final class DeserializationConfig
     {
         super(src, base);
         _deserFeatures = src._deserFeatures;
-        _nodeFactory = src._nodeFactory;
         _problemHandlers = src._problemHandlers;
+        _nodeFactory = src._nodeFactory;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = src._ctorDetector;
         _parserFeatures = src._parserFeatures;
         _parserFeaturesToChange = src._parserFeaturesToChange;
         _formatReadFeatures = src._formatReadFeatures;
         _formatReadFeaturesToChange = src._formatReadFeaturesToChange;
     }
-    
+
     private DeserializationConfig(DeserializationConfig src, JsonNodeFactory f)
     {
         super(src);
         _deserFeatures = src._deserFeatures;
         _problemHandlers = src._problemHandlers;
         _nodeFactory = f;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = src._ctorDetector;
+        _parserFeatures = src._parserFeatures;
+        _parserFeaturesToChange = src._parserFeaturesToChange;
+        _formatReadFeatures = src._formatReadFeatures;
+        _formatReadFeaturesToChange = src._formatReadFeaturesToChange;
+    }
+
+    // @since 2.12
+    private DeserializationConfig(DeserializationConfig src, ConstructorDetector ctorDetector)
+    {
+        super(src);
+        _deserFeatures = src._deserFeatures;
+        _problemHandlers = src._problemHandlers;
+        _nodeFactory = src._nodeFactory;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = ctorDetector;
         _parserFeatures = src._parserFeatures;
         _parserFeaturesToChange = src._parserFeaturesToChange;
         _formatReadFeatures = src._formatReadFeatures;
@@ -178,6 +243,8 @@ public final class DeserializationConfig
         _deserFeatures = src._deserFeatures;
         _problemHandlers = problemHandlers;
         _nodeFactory = src._nodeFactory;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = src._ctorDetector;
         _parserFeatures = src._parserFeatures;
         _parserFeaturesToChange = src._parserFeaturesToChange;
         _formatReadFeatures = src._formatReadFeatures;
@@ -190,6 +257,8 @@ public final class DeserializationConfig
         _deserFeatures = src._deserFeatures;
         _problemHandlers = src._problemHandlers;
         _nodeFactory = src._nodeFactory;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = src._ctorDetector;
         _parserFeatures = src._parserFeatures;
         _parserFeaturesToChange = src._parserFeaturesToChange;
         _formatReadFeatures = src._formatReadFeatures;
@@ -202,6 +271,8 @@ public final class DeserializationConfig
         _deserFeatures = src._deserFeatures;
         _problemHandlers = src._problemHandlers;
         _nodeFactory = src._nodeFactory;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = src._ctorDetector;
         _parserFeatures = src._parserFeatures;
         _parserFeaturesToChange = src._parserFeaturesToChange;
         _formatReadFeatures = src._formatReadFeatures;
@@ -214,6 +285,8 @@ public final class DeserializationConfig
         _deserFeatures = src._deserFeatures;
         _problemHandlers = src._problemHandlers;
         _nodeFactory = src._nodeFactory;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = src._ctorDetector;
         _parserFeatures = src._parserFeatures;
         _parserFeaturesToChange = src._parserFeaturesToChange;
         _formatReadFeatures = src._formatReadFeatures;
@@ -226,6 +299,8 @@ public final class DeserializationConfig
         _deserFeatures = src._deserFeatures;
         _problemHandlers = src._problemHandlers;
         _nodeFactory = src._nodeFactory;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = src._ctorDetector;
         _parserFeatures = src._parserFeatures;
         _parserFeaturesToChange = src._parserFeaturesToChange;
         _formatReadFeatures = src._formatReadFeatures;
@@ -233,18 +308,17 @@ public final class DeserializationConfig
     }
 
     /**
-     * Copy-constructor used for making a copy to be used by new {@link ObjectMapper}
-     * or {@link ObjectReader}.
-     *
-     * @since 2.6
+     * @since 2.14
      */
-    protected DeserializationConfig(DeserializationConfig src, SimpleMixInResolver mixins,
-            RootNameLookup rootNames)
+    protected DeserializationConfig(DeserializationConfig src,
+            DatatypeFeatures datatypeFeatures)
     {
-        super(src, mixins, rootNames);
+        super(src, datatypeFeatures);
         _deserFeatures = src._deserFeatures;
         _problemHandlers = src._problemHandlers;
         _nodeFactory = src._nodeFactory;
+        _coercionConfigs = src._coercionConfigs;
+        _ctorDetector = src._ctorDetector;
         _parserFeatures = src._parserFeatures;
         _parserFeaturesToChange = src._parserFeaturesToChange;
         _formatReadFeatures = src._formatReadFeatures;
@@ -256,85 +330,36 @@ public final class DeserializationConfig
 
     /*
     /**********************************************************
-    /* Life-cycle, factory methods from MapperConfig
+    /* Life-cycle, general factory methods from MapperConfig(Base)
     /**********************************************************
      */
-    
+
     @Override
-    public DeserializationConfig with(MapperFeature... features)
-    {
-        int newMapperFlags = _mapperFeatures;
-        for (MapperFeature f : features) {
-            newMapperFlags |= f.getMask();
-        }
-        return (newMapperFlags == _mapperFeatures) ? this :
-            new DeserializationConfig(this, newMapperFlags, _deserFeatures,
-                    _parserFeatures, _parserFeaturesToChange,
-                    _formatReadFeatures, _formatReadFeaturesToChange);
-                    
+    protected final DeserializationConfig _withBase(BaseSettings newBase) {
+        return (_base == newBase) ? this : new DeserializationConfig(this, newBase);
     }
 
     @Override
-    public DeserializationConfig without(MapperFeature... features)
-    {
-        int newMapperFlags = _mapperFeatures;
-        for (MapperFeature f : features) {
-             newMapperFlags &= ~f.getMask();
-        }
-        return (newMapperFlags == _mapperFeatures) ? this :
-            new DeserializationConfig(this, newMapperFlags, _deserFeatures,
-                    _parserFeatures, _parserFeaturesToChange,
-                    _formatReadFeatures, _formatReadFeaturesToChange);
+    protected final DeserializationConfig _withMapperFeatures(long mapperFeatures) {
+        return new DeserializationConfig(this, mapperFeatures, _deserFeatures,
+                _parserFeatures, _parserFeaturesToChange,
+                _formatReadFeatures, _formatReadFeaturesToChange);
     }
 
     @Override
-    public DeserializationConfig with(MapperFeature feature, boolean state)
-    {
-        int newMapperFlags;
-        if (state) {
-            newMapperFlags = _mapperFeatures | feature.getMask();
-        } else {
-            newMapperFlags = _mapperFeatures & ~feature.getMask();
-        }
-        return (newMapperFlags == _mapperFeatures) ? this :
-            new DeserializationConfig(this, newMapperFlags, _deserFeatures,
-                    _parserFeatures, _parserFeaturesToChange,
-                    _formatReadFeatures, _formatReadFeaturesToChange);
+    protected final DeserializationConfig _with(DatatypeFeatures dtFeatures) {
+        return new DeserializationConfig(this, dtFeatures);
     }
 
-    @Override
-    public DeserializationConfig with(ClassIntrospector ci) {
-        return _withBase(_base.withClassIntrospector(ci));
-    }
-
-    @Override
-    public DeserializationConfig with(AnnotationIntrospector ai) {
-        return _withBase(_base.withAnnotationIntrospector(ai));
-    }
-
-    @Override
-    public DeserializationConfig with(VisibilityChecker<?> vc) {
-        return _withBase(_base.withVisibilityChecker(vc));
-    }
-
-    @Override
-    public DeserializationConfig withVisibility(PropertyAccessor forMethod, JsonAutoDetect.Visibility visibility) {
-        return _withBase( _base.withVisibility(forMethod, visibility));
-    }
-    
-    @Override
-    public DeserializationConfig with(TypeResolverBuilder<?> trb) {
-        return _withBase(_base.withTypeResolverBuilder(trb));
-    }
+    /*
+    /**********************************************************
+    /* Life-cycle, specific factory methods from MapperConfig
+    /**********************************************************
+     */
 
     @Override
     public DeserializationConfig with(SubtypeResolver str) {
         return (_subtypeResolver == str) ? this : new DeserializationConfig(this, str);
-    }
-    
-    @Override
-    public DeserializationConfig with(PropertyNamingStrategy pns) {
-        return _withBase(_base.withPropertyNamingStrategy(pns));
     }
 
     @Override
@@ -350,57 +375,13 @@ public final class DeserializationConfig
     }
 
     @Override
-    public DeserializationConfig with(TypeFactory tf) {
-        return _withBase( _base.withTypeFactory(tf));
-    }
-
-    @Override
-    public DeserializationConfig with(DateFormat df) {
-        return _withBase(_base.withDateFormat(df));
-    }
-    
-    @Override
-    public DeserializationConfig with(HandlerInstantiator hi) {
-        return _withBase(_base.withHandlerInstantiator(hi));
-    }
-
-    @Override
-    public DeserializationConfig withInsertedAnnotationIntrospector(AnnotationIntrospector ai) {
-        return _withBase(_base.withInsertedAnnotationIntrospector(ai));
-    }
-
-    @Override
-    public DeserializationConfig withAppendedAnnotationIntrospector(AnnotationIntrospector ai) {
-        return _withBase(_base.withAppendedAnnotationIntrospector(ai));
-    }
-
-    @Override
     public DeserializationConfig withView(Class<?> view) {
         return (_view == view) ? this : new DeserializationConfig(this, view);
     }
 
     @Override
-    public DeserializationConfig with(Locale l) {
-        return _withBase(_base.with(l));
-    }
-
-    @Override
-    public DeserializationConfig with(TimeZone tz) {
-        return _withBase(_base.with(tz));
-    }
-
-    @Override
-    public DeserializationConfig with(Base64Variant base64) {
-        return _withBase(_base.with(base64));
-    }
-
-    @Override
     public DeserializationConfig with(ContextAttributes attrs) {
         return (attrs == _attributes) ? this : new DeserializationConfig(this, attrs);
-    }
-    
-    private final DeserializationConfig _withBase(BaseSettings newBase) {
-        return (_base == newBase) ? this : new DeserializationConfig(this, newBase);
     }
 
     /*
@@ -454,7 +435,7 @@ public final class DeserializationConfig
                     _parserFeatures, _parserFeaturesToChange,
                     _formatReadFeatures, _formatReadFeaturesToChange);
     }
-    
+
     /**
      * Fluent factory method that will construct and return a new configuration
      * object instance with specified feature disabled.
@@ -543,7 +524,7 @@ public final class DeserializationConfig
                     newSet, newMask,
                     _formatReadFeatures, _formatReadFeaturesToChange);
     }
-    
+
     /**
      * Fluent factory method that will construct and return a new configuration
      * object instance with specified feature disabled.
@@ -595,6 +576,10 @@ public final class DeserializationConfig
      */
     public DeserializationConfig with(FormatFeature feature)
     {
+        // 08-Oct-2018, tatu: Alas, complexity due to newly (2.10) refactored json-features:
+        if (feature instanceof JsonReadFeature) {
+            return _withJsonReadFeatures(feature);
+        }
         int newSet = _formatReadFeatures | feature.getMask();
         int newMask = _formatReadFeaturesToChange | feature.getMask();
         return ((_formatReadFeatures == newSet) && (_formatReadFeaturesToChange == newMask)) ? this :
@@ -611,6 +596,10 @@ public final class DeserializationConfig
      */
     public DeserializationConfig withFeatures(FormatFeature... features)
     {
+        // 08-Oct-2018, tatu: Alas, complexity due to newly (2.10) refactored json-features:
+        if (features.length > 0 && (features[0] instanceof JsonReadFeature)) {
+            return _withJsonReadFeatures(features);
+        }
         int newSet = _formatReadFeatures;
         int newMask = _formatReadFeaturesToChange;
         for (FormatFeature f : features) {
@@ -623,7 +612,7 @@ public final class DeserializationConfig
                     _parserFeatures, _parserFeaturesToChange,
                     newSet, newMask);
     }
-    
+
     /**
      * Fluent factory method that will construct and return a new configuration
      * object instance with specified feature disabled.
@@ -632,6 +621,10 @@ public final class DeserializationConfig
      */
     public DeserializationConfig without(FormatFeature feature)
     {
+        // 08-Oct-2018, tatu: Alas, complexity due to newly (2.10) refactored json-features:
+        if (feature instanceof JsonReadFeature) {
+            return _withoutJsonReadFeatures(feature);
+        }
         int newSet = _formatReadFeatures & ~feature.getMask();
         int newMask = _formatReadFeaturesToChange | feature.getMask();
         return ((_formatReadFeatures == newSet) && (_formatReadFeaturesToChange == newMask)) ? this :
@@ -648,6 +641,10 @@ public final class DeserializationConfig
      */
     public DeserializationConfig withoutFeatures(FormatFeature... features)
     {
+        // 08-Oct-2018, tatu: Alas, complexity due to newly (2.10) refactored json-features:
+        if (features.length > 0 && (features[0] instanceof JsonReadFeature)) {
+            return _withoutJsonReadFeatures(features);
+        }
         int newSet = _formatReadFeatures;
         int newMask = _formatReadFeaturesToChange;
         for (FormatFeature f : features) {
@@ -659,7 +656,61 @@ public final class DeserializationConfig
             new DeserializationConfig(this,  _mapperFeatures, _deserFeatures,
                     _parserFeatures, _parserFeaturesToChange,
                     newSet, newMask);
-    }    
+    }
+
+    // temporary for 2.10
+    private DeserializationConfig _withJsonReadFeatures(FormatFeature... features) {
+        int parserSet = _parserFeatures;
+        int parserMask = _parserFeaturesToChange;
+        int newSet = _formatReadFeatures;
+        int newMask = _formatReadFeaturesToChange;
+        for (FormatFeature f : features) {
+            final int mask = f.getMask();
+            newSet |= mask;
+            newMask |= mask;
+
+            if (f instanceof JsonReadFeature) {
+                JsonParser.Feature oldF = ((JsonReadFeature) f).mappedFeature();
+                if (oldF != null) {
+                    final int pmask = oldF.getMask();
+                    parserSet |= pmask;
+                    parserMask |= pmask;
+                }
+            }
+        }
+        return ((_formatReadFeatures == newSet) && (_formatReadFeaturesToChange == newMask)
+                && (_parserFeatures == parserSet) && (_parserFeaturesToChange == parserMask)
+                ) ? this :
+            new DeserializationConfig(this,  _mapperFeatures, _deserFeatures,
+                    parserSet, parserMask, newSet, newMask);
+    }
+
+    // temporary for 2.10
+    private DeserializationConfig _withoutJsonReadFeatures(FormatFeature... features) {
+        int parserSet = _parserFeatures;
+        int parserMask = _parserFeaturesToChange;
+        int newSet = _formatReadFeatures;
+        int newMask = _formatReadFeaturesToChange;
+        for (FormatFeature f : features) {
+            final int mask = f.getMask();
+            newSet &= ~mask;
+            newMask |= mask;
+
+            if (f instanceof JsonReadFeature) {
+                JsonParser.Feature oldF = ((JsonReadFeature) f).mappedFeature();
+                if (oldF != null) {
+                    final int pmask = oldF.getMask();
+                    parserSet &= ~pmask;
+                    parserMask |= pmask;
+                }
+            }
+        }
+        return ((_formatReadFeatures == newSet) && (_formatReadFeaturesToChange == newMask)
+                && (_parserFeatures == parserSet) && (_parserFeaturesToChange == parserMask)
+                ) ? this :
+            new DeserializationConfig(this,  _mapperFeatures, _deserFeatures,
+                    parserSet, parserMask, newSet, newMask);
+    }
 
     /*
     /**********************************************************
@@ -676,6 +727,16 @@ public final class DeserializationConfig
             return this;
         }
         return new DeserializationConfig(this, f);
+    }
+
+    /**
+     * @since 2.12
+     */
+    public DeserializationConfig with(ConstructorDetector ctorDetector) {
+        if (_ctorDetector == ctorDetector) {
+            return this;
+        }
+        return new DeserializationConfig(this, ctorDetector);
     }
 
     /**
@@ -714,96 +775,33 @@ public final class DeserializationConfig
      * Method called by {@link ObjectMapper} and {@link ObjectReader}
      * to modify those {@link com.fasterxml.jackson.core.JsonParser.Feature} settings
      * that have been configured via this config instance.
-     * 
+     *
      * @since 2.5
      */
-    public void initialize(JsonParser p) {
+    public JsonParser initialize(JsonParser p) {
         if (_parserFeaturesToChange != 0) {
             p.overrideStdFeatures(_parserFeatures, _parserFeaturesToChange);
         }
         if (_formatReadFeaturesToChange != 0) {
             p.overrideFormatFeatures(_formatReadFeatures, _formatReadFeaturesToChange);
         }
-    }
-
-    /*
-    /**********************************************************
-    /* MapperConfig implementation/overrides: introspection
-    /**********************************************************
-     */
-
-    /**
-     * Method for getting {@link AnnotationIntrospector} configured
-     * to introspect annotation values used for configuration.
-     */
-    @Override
-    public AnnotationIntrospector getAnnotationIntrospector()
-    {
-        /* 29-Jul-2009, tatu: it's now possible to disable use of
-         *   annotations; can be done using "no-op" introspector
-         */
-        if (isEnabled(MapperFeature.USE_ANNOTATIONS)) {
-            return super.getAnnotationIntrospector();
-        }
-        return NopAnnotationIntrospector.instance;
+        return p;
     }
 
     /**
-     * Accessor for getting bean description that only contains class
-     * annotations: useful if no getter/setter/creator information is needed.
+     * @since 2.12
      */
-    @Override
-    public BeanDescription introspectClassAnnotations(JavaType type) {
-        return getClassIntrospector().forClassAnnotations(this, type, this);
-    }
-
-    /**
-     * Accessor for getting bean description that only contains immediate class
-     * annotations: ones from the class, and its direct mix-in, if any, but
-     * not from super types.
-     */
-    @Override
-    public BeanDescription introspectDirectClassAnnotations(JavaType type) {
-        return getClassIntrospector().forDirectClassAnnotations(this, type, this);
-    }
-
-    @Override
-    public VisibilityChecker<?> getDefaultVisibilityChecker()
-    {
-        VisibilityChecker<?> vchecker = super.getDefaultVisibilityChecker();
-        if (!isEnabled(MapperFeature.AUTO_DETECT_SETTERS)) {
-            vchecker = vchecker.withSetterVisibility(Visibility.NONE);
+    public JsonParser initialize(JsonParser p, FormatSchema schema) {
+        if (_parserFeaturesToChange != 0) {
+            p.overrideStdFeatures(_parserFeatures, _parserFeaturesToChange);
         }
-        if (!isEnabled(MapperFeature.AUTO_DETECT_CREATORS)) {
-            vchecker = vchecker.withCreatorVisibility(Visibility.NONE);
+        if (_formatReadFeaturesToChange != 0) {
+            p.overrideFormatFeatures(_formatReadFeatures, _formatReadFeaturesToChange);
         }
-        if (!isEnabled(MapperFeature.AUTO_DETECT_FIELDS)) {
-            vchecker = vchecker.withFieldVisibility(Visibility.NONE);
+        if (schema != null) {
+            p.setSchema(schema);
         }
-        return vchecker;
-    }
-
-    /*
-    /**********************************************************
-    /* Configuration: default settings with per-type overrides
-    /**********************************************************
-     */
-    
-    // property inclusion not used on deserialization yet (2.7): may be added in future
-    @Override
-    public JsonInclude.Value getDefaultPropertyInclusion() {
-        return EMPTY_INCLUDE;
-    }
-
-    @Override
-    public JsonInclude.Value getDefaultPropertyInclusion(Class<?> baseType) {
-        return EMPTY_INCLUDE;
-    }
-
-    @Override
-    public JsonFormat.Value getDefaultPropertyFormat(Class<?> baseType) {
-        // !!! TODO: per-type defaults
-        return EMPTY_FORMAT;
+        return p;
     }
 
     /*
@@ -821,8 +819,16 @@ public final class DeserializationConfig
         return isEnabled(DeserializationFeature.UNWRAP_ROOT_VALUE);
     }
 
-    public final boolean isEnabled(DeserializationFeature f) {
-        return (_deserFeatures & f.getMask()) != 0;
+    /**
+     * Accessor for checking whether give {@link DeserializationFeature}
+     * is enabled or not.
+     *
+     * @param feature Feature to check
+     *
+     * @return True if feature is enabled; false otherwise
+     */
+    public final boolean isEnabled(DeserializationFeature feature) {
+        return (_deserFeatures & feature.getMask()) != 0;
     }
 
     public final boolean isEnabled(JsonParser.Feature f, JsonFactory factory) {
@@ -836,7 +842,7 @@ public final class DeserializationConfig
     /**
      * Bulk access method for checking that all features specified by
      * mask are enabled.
-     * 
+     *
      * @since 2.3
      */
     public final boolean hasDeserializationFeatures(int featureMask) {
@@ -846,7 +852,7 @@ public final class DeserializationConfig
     /**
      * Bulk access method for checking that at least one of features specified by
      * mask is enabled.
-     * 
+     *
      * @since 2.6
      */
     public final boolean hasSomeOfFeatures(int featureMask) {
@@ -859,6 +865,33 @@ public final class DeserializationConfig
      */
     public final int getDeserializationFeatures() {
         return _deserFeatures;
+    }
+
+    /**
+     * Convenience method equivalent to:
+     *<code>
+     *   isEnabled(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+     *</code>
+     *
+     * @since 2.9
+     */
+    public final boolean requiresFullValue() {
+        return DeserializationFeature.FAIL_ON_TRAILING_TOKENS.enabledIn(_deserFeatures);
+    }
+
+    /**
+     * Accessor for checking whether give {@link DatatypeFeature}
+     * is enabled or not.
+     *
+     * @param feature Feature to check
+     *
+     * @return True if feature is enabled; false otherwise
+     *
+     * @since 2.14
+     */
+    @Override
+    public final boolean isEnabled(DatatypeFeature feature) {
+        return _datatypeFeatures.isEnabled(feature);
     }
 
     /*
@@ -879,6 +912,16 @@ public final class DeserializationConfig
         return _nodeFactory;
     }
 
+    /**
+     * @since 2.12
+     */
+    public ConstructorDetector getConstructorDetector() {
+        if (_ctorDetector == null) {
+            return ConstructorDetector.DEFAULT;
+        }
+        return _ctorDetector;
+    }
+
     /*
     /**********************************************************
     /* Introspection methods
@@ -891,26 +934,33 @@ public final class DeserializationConfig
      *
      * @param type Type of class to be introspected
      */
-    @SuppressWarnings("unchecked")
-    public <T extends BeanDescription> T introspect(JavaType type) {
-        return (T) getClassIntrospector().forDeserialization(this, type, this);
+    public BeanDescription introspect(JavaType type) {
+        return getClassIntrospector().forDeserialization(this, type, this);
     }
 
     /**
      * Method that will introspect subset of bean properties needed to
      * construct bean instance.
      */
-    @SuppressWarnings("unchecked")
-    public <T extends BeanDescription> T introspectForCreation(JavaType type) {
-        return (T) getClassIntrospector().forCreation(this, type, this);
+    public BeanDescription introspectForCreation(JavaType type) {
+        return getClassIntrospector().forCreation(this, type, this);
+    }
+
+    /**
+     * @since 2.12
+     */
+    public BeanDescription introspectForBuilder(JavaType builderType, BeanDescription valueTypeDesc) {
+        return getClassIntrospector().forDeserializationWithBuilder(this,
+                builderType, this, valueTypeDesc);
     }
 
     /**
      * @since 2.0
+     * @deprecated Since 2.12 - use variant that takes both builder and value type
      */
-    @SuppressWarnings("unchecked")
-    public <T extends BeanDescription> T introspectForBuilder(JavaType type) {
-        return (T) getClassIntrospector().forDeserializationWithBuilder(this, type, this);
+    @Deprecated
+    public BeanDescription introspectForBuilder(JavaType type) {
+        return getClassIntrospector().forDeserializationWithBuilder(this, type, this);
     }
 
     /*
@@ -918,12 +968,12 @@ public final class DeserializationConfig
     /* Support for polymorphic type handling
     /**********************************************************
      */
-    
+
     /**
      * Helper method that is needed to properly handle polymorphic referenced
      * types, such as types referenced by {@link java.util.concurrent.atomic.AtomicReference},
      * or various "optional" types.
-     * 
+     *
      * @since 2.4
      */
     public TypeDeserializer findTypeDeserializer(JavaType baseType)
@@ -945,19 +995,55 @@ public final class DeserializationConfig
         } else {
             subtypes = getSubtypeResolver().collectAndResolveSubtypesByTypeId(this, ac);
         }
-        /* 04-May-2014, tatu: When called from DeserializerFactory, additional code like
-         *   this is invoked. But here we do not actually have access to mappings, so not
-         *   quite sure what to do, if anything. May need to revisit if the underlying
-         *   problem re-surfaces...
-         */
-        /*
-        if ((b.getDefaultImpl() == null) && baseType.isAbstract()) {
-            JavaType defaultType = mapAbstractType(config, baseType);
-            if (defaultType != null && defaultType.getRawClass() != baseType.getRawClass()) {
-                b = b.defaultImpl(defaultType.getRawClass());
-            }
-        }
-        */
         return b.buildTypeDeserializer(this, baseType, subtypes);
+    }
+
+    /*
+    /**********************************************************************
+    /* CoercionConfig access
+    /**********************************************************************
+     */
+
+    /**
+     * General-purpose accessor for finding what to do when specified coercion
+     * from shape that is now always allowed to be coerced from is requested.
+     *
+     * @param targetType Logical target type of coercion
+     * @param targetClass Physical target type of coercion
+     * @param inputShape Input shape to coerce from
+     *
+     * @return CoercionAction configured for specific coercion
+     *
+     * @since 2.12
+     */
+    public CoercionAction findCoercionAction(LogicalType targetType,
+            Class<?> targetClass, CoercionInputShape inputShape)
+    {
+        return _coercionConfigs.findCoercion(this,
+                targetType, targetClass, inputShape);
+    }
+
+    /**
+     * More specialized accessor called in case of input being a blank
+     * String (one consisting of only white space characters with length of at least one).
+     * Will basically first determine if "blank as empty" is allowed: if not,
+     * returns {@code actionIfBlankNotAllowed}, otherwise returns action for
+     * {@link CoercionInputShape#EmptyString}.
+     *
+     * @param targetType Logical target type of coercion
+     * @param targetClass Physical target type of coercion
+     * @param actionIfBlankNotAllowed Return value to use in case "blanks as empty"
+     *    is not allowed
+     *
+     * @return CoercionAction configured for specified coercion from blank string
+     *
+     * @since 2.12
+     */
+    public CoercionAction findCoercionFromBlankString(LogicalType targetType,
+            Class<?> targetClass,
+            CoercionAction actionIfBlankNotAllowed)
+    {
+        return _coercionConfigs.findCoercionFromBlankString(this,
+                targetType, targetClass, actionIfBlankNotAllowed);
     }
 }

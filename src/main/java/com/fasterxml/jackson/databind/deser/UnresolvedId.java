@@ -1,10 +1,11 @@
 package com.fasterxml.jackson.databind.deser;
 
 import com.fasterxml.jackson.core.JsonLocation;
+import com.fasterxml.jackson.databind.util.ClassUtil;
 
 /**
  * Helper class for {@link UnresolvedForwardReference}, to contain information about unresolved ids.
- * 
+ *
  * @author pgelinas
  */
 public class UnresolvedId {
@@ -17,7 +18,7 @@ public class UnresolvedId {
         _type = type;
         _location = where;
     }
-    
+
     /**
      * The id which is unresolved.
      */
@@ -32,6 +33,6 @@ public class UnresolvedId {
     @Override
     public String toString() {
         return String.format("Object id [%s] (for %s) at %s", _id,
-                (_type == null) ? "NULL" : _type.getName(), _location);
+                ClassUtil.nameOf(_type), _location);
     }
 }

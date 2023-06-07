@@ -19,16 +19,20 @@ public class AsExternalTypeDeserializer extends AsArrayTypeDeserializer
 {
     private static final long serialVersionUID = 1L;
 
+    /**
+     * @since 2.8
+     */
     public AsExternalTypeDeserializer(JavaType bt, TypeIdResolver idRes,
-            String typePropertyName, boolean typeIdVisible, Class<?> defaultImpl)
+            String typePropertyName, boolean typeIdVisible, JavaType defaultImpl)
     {
         super(bt, idRes, typePropertyName, typeIdVisible, defaultImpl);
     }
 
-    public AsExternalTypeDeserializer(AsExternalTypeDeserializer src, BeanProperty property) {
+    public AsExternalTypeDeserializer(AsExternalTypeDeserializer src,
+            BeanProperty property) {
         super(src, property);
     }
-    
+
     @Override
     public TypeDeserializer forProperty(BeanProperty prop) {
         if (prop == _property) { // usually if it's null
@@ -36,7 +40,7 @@ public class AsExternalTypeDeserializer extends AsArrayTypeDeserializer
         }
         return new AsExternalTypeDeserializer(this, prop);
     }
-    
+
     @Override
     public As getTypeInclusion() { return As.EXTERNAL_PROPERTY; }
 

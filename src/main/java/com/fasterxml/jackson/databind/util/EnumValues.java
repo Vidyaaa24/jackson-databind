@@ -4,11 +4,12 @@ import java.util.*;
 
 import com.fasterxml.jackson.core.SerializableString;
 import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.cfg.EnumFeature;
 import com.fasterxml.jackson.databind.cfg.MapperConfig;
 
 /**
- * Helper class used for storing String serializations of
- * enumerations.
+ * Helper class used for storing String serializations of {@code Enum}s,
+ * to match to/from external representations.
  */
 public final class EnumValues
     implements java.io.Serializable
@@ -46,7 +47,7 @@ public final class EnumValues
         Class<? extends Enum<?>> enumCls = ClassUtil.findEnumType(enumClass);
         Enum<?>[] enumValues = enumCls.getEnumConstants();
         if (enumValues == null) {
-            throw new IllegalArgumentException("Can not determine enum constants for Class "+enumClass.getName());
+            throw new IllegalArgumentException("Cannot determine enum constants for Class "+enumClass.getName());
         }
         String[] names = config.getAnnotationIntrospector().findEnumValues(enumCls, enumValues, new String[enumValues.length]);
         SerializableString[] textual = new SerializableString[enumValues.length];
@@ -56,23 +57,68 @@ public final class EnumValues
             if (name == null) {
                 name = en.name();
             }
+            if (config.isEnabled(EnumFeature.WRITE_ENUMS_TO_LOWERCASE)) {
+                name = name.toLowerCase();
+            }
             textual[en.ordinal()] = config.compileString(name);
         }
-        return new EnumValues(enumClass, textual);
+        return construct(enumClass, textual);
     }
 
     public static EnumValues constructFromToString(MapperConfig<?> config, Class<Enum<?>> enumClass)
     {
         Class<? extends Enum<?>> cls = ClassUtil.findEnumType(enumClass);
         Enum<?>[] values = cls.getEnumConstants();
-        if (values != null) {
-            SerializableString[] textual = new SerializableString[values.length];
-            for (Enum<?> en : values) {
-                textual[en.ordinal()] = config.compileString(en.toString());
-            }
-            return new EnumValues(enumClass, textual);
+        if (values == null) { // can this ever occur?
+            throw new IllegalArgumentException("Cannot determine enum constants for Class "+enumClass.getName());
         }
-        throw new IllegalArgumentException("Can not determine enum constants for Class "+enumClass.getName());
+        ArrayList<String> external = new ArrayList<>(values.length);
+        for (Enum<?> en : values) {
+            external.add(en.toString());
+        }
+        return construct(config, enumClass, external);
+    }
+
+    /**
+     * Returns String serializations of Enum name using an instance of {@link EnumNamingStrategy}.
+     *
+     * The output {@link EnumValues} should contain values that are symmetric to
+     * {@link EnumResolver#constructUsingEnumNamingStrategy(DeserializationConfig, Class, EnumNamingStrategy)}.
+     *
+     * @since 2.15
+     */
+    public static EnumValues constructUsingEnumNamingStrategy(MapperConfig<?> config, Class<Enum<?>> enumClass, EnumNamingStrategy namingStrategy) {
+        Class<? extends Enum<?>> cls = ClassUtil.findEnumType(enumClass);
+        Enum<?>[] values = cls.getEnumConstants();
+        if (values == null) {
+            throw new IllegalArgumentException("Cannot determine enum constants for Class " + enumClass.getName());
+        }
+        ArrayList<String> external = new ArrayList<>(values.length);
+        for (Enum<?> en : values) {
+            external.add(namingStrategy.convertEnumToExternalName(en.name()));
+        }
+        return construct(config, enumClass, external);
+    }
+
+    /**
+     * @since 2.11
+     */
+    public static EnumValues construct(MapperConfig<?> config, Class<Enum<?>> enumClass,
+            List<String> externalValues) {
+        final int len = externalValues.size();
+        SerializableString[] textual = new SerializableString[len];
+        for (int i = 0; i < len; ++i) {
+            textual[i] = config.compileString(externalValues.get(i));
+        }
+        return construct(enumClass, textual);
+    }
+
+    /**
+     * @since 2.11
+     */
+    public static EnumValues construct(Class<Enum<?>> enumClass,
+            SerializableString[] externalValues) {
+        return new EnumValues(enumClass, externalValues);
     }
 
     public SerializableString serializedValueFor(Enum<?> key) {
@@ -85,7 +131,7 @@ public final class EnumValues
 
     /**
      * Convenience accessor for getting raw Enum instances.
-     * 
+     *
      * @since 2.6
      */
     public List<Enum<?>> enums() {

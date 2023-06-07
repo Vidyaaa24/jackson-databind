@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.util.StdConverter;
 
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
 public class TestConvertingSerializer
     extends com.fasterxml.jackson.databind.BaseMapTest
 {
@@ -33,11 +35,11 @@ public class TestConvertingSerializer
             y = v2;
         }
     }
-    
+
     static class ConvertingBeanContainer
     {
         public List<ConvertingBean> values;
-        
+
         public ConvertingBeanContainer(ConvertingBean... beans) {
             values = Arrays.asList(beans);
         }
@@ -57,7 +59,7 @@ public class TestConvertingSerializer
             return new int[] { value.x, value.y };
         }
     }
-    
+
     static class PointWrapper {
         @JsonSerialize(converter=PointConverter.class)
         public Point value;
@@ -84,7 +86,7 @@ public class TestConvertingSerializer
             values = Arrays.asList(new Point[] { new Point(x, y), new Point(y, x) });
         }
     }
-    
+
     static class PointListWrapperMap {
         @JsonSerialize(contentConverter=PointConverter.class)
         public Map<String,Point> values;
@@ -95,7 +97,22 @@ public class TestConvertingSerializer
         }
     }
 
-    // [Issue#359]
+    // [databind#357]
+    static class Value { }
+
+    static class ListWrapper {
+        @JsonSerialize(contentConverter = ValueToStringListConverter.class)
+        public List<Value> list = Arrays.asList(new Value());
+    }
+
+    static class ValueToStringListConverter extends StdConverter<Value, List<String>> {
+        @Override
+        public List<String> convert(Value value) {
+            return Arrays.asList("Hello world!");
+        }
+    }
+
+    // [databind#359]
     static class Bean359 {
         @JsonSerialize(as = List.class, contentAs = Source.class)
         public List<Source> stuff = Arrays.asList(new Source());
@@ -124,7 +141,8 @@ public class TestConvertingSerializer
         }
     }
 
-    // [Issue#731]
+    // [databind#731]
+    @JsonPropertyOrder({ "a", "b" })
     public static class DummyBean {
         public final int a, b;
         public DummyBean(int v1, int v2) {
@@ -147,21 +165,6 @@ public class TestConvertingSerializer
         @Override
         public Object convert(ConvertingBeanWithUntypedConverter cb) {
             return new DummyBean(cb.x, cb.y);
-        }
-    }
-
-    // [databind#357]
-    static class Value { }
-
-    static class ListWrapper {
-        @JsonSerialize(contentConverter = ValueToStringListConverter.class)
-        public List<Value> list = Arrays.asList(new Value());
-    }
-
-    static class ValueToStringListConverter extends StdConverter<Value, List<String>> {
-        @Override
-        public List<String> convert(Value value) {
-            return Arrays.asList("Hello world!");
         }
     }
 
@@ -205,6 +208,12 @@ public class TestConvertingSerializer
         assertEquals("{\"values\":{\"a\":[1,2]}}", json);
     }
 
+    // [databind#357]
+    public void testConverterForList357() throws Exception {
+        String json = objectWriter().writeValueAsString(new ListWrapper());
+        assertEquals("{\"list\":[[\"Hello world!\"]]}", json);
+    }
+
     // [databind#359]
     public void testIssue359() throws Exception {
         String json = objectWriter().writeValueAsString(new Bean359());
@@ -217,11 +226,5 @@ public class TestConvertingSerializer
         String json = objectWriter().writeValueAsString(new ConvertingBeanWithUntypedConverter(1, 2));
         // must be  {"a":2,"b":4}
         assertEquals("{\"a\":2,\"b\":4}", json);
-    }
-
-    // [databind#357]
-    public void testConverterForList357() throws Exception {
-        String json = objectWriter().writeValueAsString(new ListWrapper());
-        assertEquals("{\"list\":[[\"Hello world!\"]]}", json);
     }
 }

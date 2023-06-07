@@ -1,102 +1,84 @@
 package com.fasterxml.jackson.databind.deser.std;
 
-import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.fasterxml.jackson.core.*;
-
 import com.fasterxml.jackson.databind.*;
-import com.fasterxml.jackson.databind.deser.ContextualDeserializer;
+import com.fasterxml.jackson.databind.deser.ValueInstantiator;
 import com.fasterxml.jackson.databind.jsontype.TypeDeserializer;
 
 public class AtomicReferenceDeserializer
-    extends StdDeserializer<AtomicReference<?>>
-    implements ContextualDeserializer
+    extends ReferenceTypeDeserializer<AtomicReference<Object>>
 {
     private static final long serialVersionUID = 1L;
 
-    /**
-     * Type of value that we reference
+    /*
+    /**********************************************************
+    /* Life-cycle
+    /**********************************************************
      */
-    protected final JavaType _referencedType;
-    
-    protected final TypeDeserializer _valueTypeDeserializer;
 
-    protected final JsonDeserializer<?> _valueDeserializer;
-    
     /**
-     * @param referencedType Parameterization of this reference
+     * @since 2.9
      */
-    public AtomicReferenceDeserializer(JavaType referencedType) {
-        this(referencedType, null, null);
-    }
-    
-    public AtomicReferenceDeserializer(JavaType referencedType, TypeDeserializer typeDeser, JsonDeserializer<?> deser)
+    public AtomicReferenceDeserializer(JavaType fullType, ValueInstantiator inst,
+            TypeDeserializer typeDeser, JsonDeserializer<?> deser)
     {
-        super(AtomicReference.class);
-        _referencedType = referencedType;
-        _valueDeserializer = deser;
-        _valueTypeDeserializer = typeDeser;
+        super(fullType, inst, typeDeser, deser);
     }
 
+    /*
+    /**********************************************************
+    /* Abstract method implementations
+    /**********************************************************
+     */
+
+    @Override
     public AtomicReferenceDeserializer withResolved(TypeDeserializer typeDeser, JsonDeserializer<?> valueDeser) {
-        if ((valueDeser == _valueDeserializer) && (typeDeser == _valueTypeDeserializer)) {
-            return this;
-        }
-        return new AtomicReferenceDeserializer(_referencedType, typeDeser, valueDeser);
+        return new AtomicReferenceDeserializer(_fullType, _valueInstantiator,
+                typeDeser, valueDeser);
     }
 
     @Override
-    public AtomicReference<?> getNullValue(DeserializationContext ctxt) {
-        return new AtomicReference<Object>();
-    }
-
-    @Deprecated // remove in 2.7
-    @Override
-    public AtomicReference<?> getNullValue() {
-        return new AtomicReference<Object>();
-    }
-    
-    @Override
-    public JsonDeserializer<?> createContextual(DeserializationContext ctxt, BeanProperty property) throws JsonMappingException
-    {
-        JsonDeserializer<?> deser = _valueDeserializer;
-        TypeDeserializer typeDeser = _valueTypeDeserializer;
-
-        if (deser == null) {
-            deser = ctxt.findContextualValueDeserializer(_referencedType, property);
-        } else { // otherwise directly assigned, probably not contextual yet:
-            deser = ctxt.handleSecondaryContextualization(deser, property, _referencedType);
-        }
-        if (typeDeser != null) {
-            typeDeser = typeDeser.forProperty(property);
-        }
-        return withResolved(typeDeser, deser);
+    public AtomicReference<Object> getNullValue(DeserializationContext ctxt) throws JsonMappingException {
+        // 07-May-2019, tatu: [databind#2303], needed for nested ReferenceTypes
+        return new AtomicReference<Object>(_valueDeserializer.getNullValue(ctxt));
     }
 
     @Override
-    public AtomicReference<?> deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
-        Object contents = (_valueTypeDeserializer == null)
-                ? _valueDeserializer.deserialize(p, ctxt)
-                : _valueDeserializer.deserializeWithType(p, ctxt, _valueTypeDeserializer);
+    public Object getEmptyValue(DeserializationContext ctxt) throws JsonMappingException {
+        // 07-May-2019, tatu: I _think_ this needs to align with "null value" and
+        //    not necessarily with empty value of contents? (used to just do "absent"
+        //    so either way this seems to me like an improvement)
+        return getNullValue(ctxt);
+    }
+
+    /**
+     * Let's actually NOT coerce missing Creator parameters into empty value.
+     */
+    @Override // @since 2.13
+    public Object getAbsentValue(DeserializationContext ctxt) throws JsonMappingException {
+        return null;
+    }
+
+    @Override
+    public AtomicReference<Object> referenceValue(Object contents) {
         return new AtomicReference<Object>(contents);
     }
 
     @Override
-    public Object deserializeWithType(JsonParser p, DeserializationContext ctxt,
-            TypeDeserializer typeDeserializer) throws IOException
-    {
-        final JsonToken t = p.getCurrentToken();
-        if (t == JsonToken.VALUE_NULL) { // can this actually happen?
-            return getNullValue(ctxt);
-        }
-        // 22-Oct-2015, tatu: This handling is probably not needed (or is wrong), but
-        //   could be result of older (pre-2.7) Jackson trying to serialize natural types.
-        //  Because of this, let's allow for now, unless proven problematic
-        if ((t != null) && t.isScalarValue()) {
-            return deserialize(p, ctxt);
-        }
-        // andn this is what should really happen
-        return typeDeserializer.deserializeTypedFromAny(p, ctxt);
+    public Object getReferenced(AtomicReference<Object> reference) {
+        return reference.get();
+    }
+
+    @Override // since 2.9
+    public AtomicReference<Object> updateReference(AtomicReference<Object> reference, Object contents) {
+        reference.set(contents);
+        return reference;
+    }
+
+    @Override // since 2.9
+    public Boolean supportsUpdate(DeserializationConfig config) {
+        // yes; regardless of value deserializer reference itself may be updated
+        return Boolean.TRUE;
     }
 }

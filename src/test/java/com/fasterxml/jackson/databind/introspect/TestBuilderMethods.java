@@ -3,9 +3,6 @@ package com.fasterxml.jackson.databind.introspect;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.*;
-import com.fasterxml.jackson.databind.introspect.BasicClassIntrospector;
-import com.fasterxml.jackson.databind.introspect.POJOPropertiesCollector;
-import com.fasterxml.jackson.databind.introspect.POJOPropertyBuilder;
 
 public class TestBuilderMethods extends BaseMapTest
 {
@@ -26,10 +23,10 @@ public class TestBuilderMethods extends BaseMapTest
      */
 
     private final ObjectMapper mapper = new ObjectMapper();
-    
+
     public void testSimple()
     {
-        POJOPropertiesCollector coll = collector(SimpleBuilder.class, "with");
+        POJOPropertiesCollector coll = collector(SimpleBuilder.class);
         Map<String, POJOPropertyBuilder> props = coll.getPropertyMap();
         assertEquals(1, props.size());
         POJOPropertyBuilder prop = props.get("x");
@@ -45,12 +42,11 @@ public class TestBuilderMethods extends BaseMapTest
     /**********************************************************
      */
 
-    protected POJOPropertiesCollector collector(Class<?> cls, String prefix)
+    protected POJOPropertiesCollector collector(Class<?> cls)
     {
         BasicClassIntrospector bci = new BasicClassIntrospector();
         // no real difference between serialization, deserialization, at least here
-        return bci.collectProperties(mapper.getSerializationConfig(),
-                mapper.constructType(cls), null, false, prefix);
+        return bci.collectPropertiesWithBuilder(mapper.getSerializationConfig(),
+                mapper.constructType(cls), null, null, false);
     }
-    
 }

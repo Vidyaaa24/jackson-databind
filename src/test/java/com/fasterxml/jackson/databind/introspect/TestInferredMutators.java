@@ -1,15 +1,15 @@
 package com.fasterxml.jackson.databind.introspect;
 
 import com.fasterxml.jackson.databind.BaseMapTest;
-import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 
 public class TestInferredMutators extends BaseMapTest
 {
     public static class Point {
         protected int x;
-        
+
         public int getX() { return x; }
     }
 
@@ -33,15 +33,17 @@ public class TestInferredMutators extends BaseMapTest
         ObjectMapper mapper = new ObjectMapper();
         // default value is 'enabled', for backwards compatibility
         assertTrue(mapper.isEnabled(MapperFeature.ALLOW_FINAL_FIELDS_AS_MUTATORS));
-        mapper.disable(MapperFeature.ALLOW_FINAL_FIELDS_AS_MUTATORS);
+        mapper = jsonMapperBuilder()
+                .disable(MapperFeature.ALLOW_FINAL_FIELDS_AS_MUTATORS)
+                .build();
         try {
             /*p =*/ mapper.readValue("{\"x\":2}", FixedPoint.class);
             fail("Should not try to use final field");
-        } catch (JsonMappingException e) {
+        } catch (UnrecognizedPropertyException e) {
             verifyException(e, "unrecognized field \"x\"");
         }
     }
-    
+
     // for #195
     public void testDeserializationInference() throws Exception
     {
@@ -53,12 +55,13 @@ public class TestInferredMutators extends BaseMapTest
         assertEquals(2, p.x);
 
         // but without it, should fail:
-        mapper = new ObjectMapper();
-        mapper.disable(MapperFeature.INFER_PROPERTY_MUTATORS);
+        mapper = jsonMapperBuilder()
+                .disable(MapperFeature.INFER_PROPERTY_MUTATORS)
+                .build();
         try {
             p = mapper.readValue(JSON,  Point.class);
             fail("Should not succeeed");
-        } catch (JsonMappingException e) {
+        } catch (UnrecognizedPropertyException e) {
             verifyException(e, "unrecognized field \"x\"");
         }
     }

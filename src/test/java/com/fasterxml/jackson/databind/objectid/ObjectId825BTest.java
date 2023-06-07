@@ -4,6 +4,7 @@ import java.util.ArrayList;
 
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.testutil.NoCheckSubTypeValidator;
 
 @SuppressWarnings("serial")
 public class ObjectId825BTest extends BaseMapTest
@@ -133,15 +134,22 @@ public class ObjectId825BTest extends BaseMapTest
 
     static class V extends AbstractData {
         private static final long serialVersionUID = 1L;
-    }    
+    }
+
+    /*
+    /*****************************************************
+    /* Test methods
+    /*****************************************************
+     */
 
     public void testFull825() throws Exception
     {
-        final ObjectMapper mapper = new ObjectMapper();
-        mapper.enableDefaultTyping(ObjectMapper.DefaultTyping.OBJECT_AND_NON_CONCRETE);
-        mapper.enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT);
+        final ObjectMapper mapper = jsonMapperBuilder()
+                .activateDefaultTyping(NoCheckSubTypeValidator.instance,
+                        ObjectMapper.DefaultTyping.OBJECT_AND_NON_CONCRETE)
+                .build();
 
-        String INPUT = aposToQuotes(
+        String INPUT = a2q(
 "{\n"+
 "    '@class': '_PKG_CTC',\n"+
 "     'var': [{\n"+
@@ -187,7 +195,7 @@ public class ObjectId825BTest extends BaseMapTest
         // also replace package
         final String newPkg = getClass().getName() + "\\$";
         INPUT = INPUT.replaceAll("_PKG_", newPkg);
-        
+
         CTC result = mapper.readValue(INPUT, CTC.class);
         assertNotNull(result);
     }

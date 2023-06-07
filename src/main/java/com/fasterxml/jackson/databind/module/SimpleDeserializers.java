@@ -18,7 +18,8 @@ import com.fasterxml.jackson.databind.type.*;
  * all mappings must be to exact declared deserialization type.
  */
 public class SimpleDeserializers
-   implements Deserializers, java.io.Serializable
+   extends Deserializers.Base
+   implements java.io.Serializable
 {
     private static final long serialVersionUID = 1L;
 
@@ -26,17 +27,17 @@ public class SimpleDeserializers
 
     /**
      * Flag to help find "generic" enum deserializer, if one has been registered.
-     * 
+     *
      * @since 2.3
      */
     protected boolean _hasEnumDeserializer = false;
-    
+
     /*
     /**********************************************************
     /* Life-cycle, construction and configuring
     /**********************************************************
      */
-    
+
     public SimpleDeserializers() { }
 
     /**
@@ -45,7 +46,7 @@ public class SimpleDeserializers
     public SimpleDeserializers(Map<Class<?>,JsonDeserializer<?>> desers) {
         addDeserializers(desers);
     }
-    
+
     public <T> void addDeserializer(Class<T> forClass, JsonDeserializer<? extends T> deser)
     {
         ClassKey key = new ClassKey(forClass);
@@ -72,20 +73,20 @@ public class SimpleDeserializers
             addDeserializer((Class<Object>) cls, deser);
         }
     }
-    
+
     /*
     /**********************************************************
     /* Serializers implementation
     /**********************************************************
      */
-    
+
     @Override
     public JsonDeserializer<?> findArrayDeserializer(ArrayType type,
             DeserializationConfig config, BeanDescription beanDesc,
             TypeDeserializer elementTypeDeserializer, JsonDeserializer<?> elementDeserializer)
         throws JsonMappingException
     {
-        return (_classMappings == null) ? null : _classMappings.get(new ClassKey(type.getRawClass()));
+        return _find(type);
     }
 
     @Override
@@ -93,7 +94,7 @@ public class SimpleDeserializers
             DeserializationConfig config, BeanDescription beanDesc)
         throws JsonMappingException
     {
-        return (_classMappings == null) ? null : _classMappings.get(new ClassKey(type.getRawClass()));
+        return _find(type);
     }
 
     @Override
@@ -103,7 +104,7 @@ public class SimpleDeserializers
             JsonDeserializer<?> elementDeserializer)
         throws JsonMappingException
     {
-        return (_classMappings == null) ? null : _classMappings.get(new ClassKey(type.getRawClass()));
+        return _find(type);
     }
 
     @Override
@@ -113,9 +114,9 @@ public class SimpleDeserializers
             JsonDeserializer<?> elementDeserializer)
         throws JsonMappingException
     {
-        return (_classMappings == null) ? null : _classMappings.get(new ClassKey(type.getRawClass()));
+        return _find(type);
     }
-    
+
     @Override
     public JsonDeserializer<?> findEnumDeserializer(Class<?> type,
             DeserializationConfig config, BeanDescription beanDesc)
@@ -126,6 +127,10 @@ public class SimpleDeserializers
         }
         JsonDeserializer<?> deser = _classMappings.get(new ClassKey(type));
         if (deser == null) {
+            // 29-Sep-2019, tatu: Not 100% sure this is workable logic but leaving
+            //   as is (wrt [databind#2457]. Probably works ok since this covers direct
+            //   sub-classes of `Enum`; but even if custom sub-classes aren't, unlikely
+            //   mapping for those ever requested for deserialization
             if (_hasEnumDeserializer && type.isEnum()) {
                 deser = _classMappings.get(new ClassKey(Enum.class));
             }
@@ -138,9 +143,12 @@ public class SimpleDeserializers
             DeserializationConfig config, BeanDescription beanDesc)
         throws JsonMappingException
     {
-        return (_classMappings == null) ? null : _classMappings.get(new ClassKey(nodeType));
+        if (_classMappings == null) {
+            return null;
+        }
+        return _classMappings.get(new ClassKey(nodeType));
     }
-    
+
     @Override
     public JsonDeserializer<?> findReferenceDeserializer(ReferenceType refType,
             DeserializationConfig config, BeanDescription beanDesc,
@@ -148,9 +156,9 @@ public class SimpleDeserializers
         throws JsonMappingException {
         // 21-Oct-2015, tatu: Unlikely this will really get used (reference types need more
         //    work, simple registration probably not sufficient). But whatever.
-        return (_classMappings == null) ? null : _classMappings.get(new ClassKey(refType.getRawClass()));
+        return _find(refType);
     }
-    
+
     @Override
     public JsonDeserializer<?> findMapDeserializer(MapType type,
             DeserializationConfig config, BeanDescription beanDesc,
@@ -159,7 +167,7 @@ public class SimpleDeserializers
             JsonDeserializer<?> elementDeserializer)
         throws JsonMappingException
     {
-        return (_classMappings == null) ? null : _classMappings.get(new ClassKey(type.getRawClass()));
+        return _find(type);
     }
 
     @Override
@@ -170,6 +178,20 @@ public class SimpleDeserializers
             JsonDeserializer<?> elementDeserializer)
         throws JsonMappingException
     {
-        return (_classMappings == null) ? null : _classMappings.get(new ClassKey(type.getRawClass()));
+        return _find(type);
+    }
+
+    @Override // since 2.11
+    public boolean hasDeserializerFor(DeserializationConfig config,
+            Class<?> valueType) {
+        return (_classMappings != null)
+                && _classMappings.containsKey(new ClassKey(valueType));
+    }
+
+    private final JsonDeserializer<?> _find(JavaType type) {
+        if (_classMappings == null) {
+            return null;
+        }
+        return _classMappings.get(new ClassKey(type.getRawClass()));
     }
 }

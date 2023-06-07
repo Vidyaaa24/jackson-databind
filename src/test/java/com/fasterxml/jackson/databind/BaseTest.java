@@ -29,7 +29,7 @@ public abstract class BaseTest
     protected final static int SAMPLE_SPEC_VALUE_TN_ID3 = 234;
     protected final static int SAMPLE_SPEC_VALUE_TN_ID4 = 38793;
 
-    protected final static String SAMPLE_DOC_JSON_SPEC = 
+    protected final static String SAMPLE_DOC_JSON_SPEC =
         "{\n"
         +"  \"Image\" : {\n"
         +"    \"Width\" : "+SAMPLE_SPEC_VALUE_WIDTH+",\n"
@@ -50,7 +50,7 @@ public abstract class BaseTest
     /* Helper classes (beans)
     /**********************************************************
      */
-    
+
     /**
      * Sample class from Jackson tutorial ("JacksonInFiveMinutes")
      */
@@ -59,28 +59,28 @@ public abstract class BaseTest
 
         public static class Name
         {
-          private String _first, _last;
+            private String _first, _last;
 
-          public Name() { }
-          public Name(String f, String l) {
-              _first = f;
-              _last = l;
-          }
-          
-          public String getFirst() { return _first; }
-          public String getLast() { return _last; }
+            public Name() { }
+            public Name(String f, String l) {
+                _first = f;
+                _last = l;
+            }
 
-          public void setFirst(String s) { _first = s; }
-          public void setLast(String s) { _last = s; }
+            public String getFirst() { return _first; }
+            public String getLast() { return _last; }
 
-          @Override
-          public boolean equals(Object o)
-          {
-              if (o == this) return true;
-              if (o == null || o.getClass() != getClass()) return false;
-              Name other = (Name) o;
-              return _first.equals(other._first) && _last.equals(other._last); 
-          }
+            public void setFirst(String s) { _first = s; }
+            public void setLast(String s) { _last = s; }
+
+            @Override
+            public boolean equals(Object o)
+            {
+                if (o == this) return true;
+                if (o == null || o.getClass() != getClass()) return false;
+                Name other = (Name) o;
+                return _first.equals(other._first) && _last.equals(other._last);
+            }
         }
 
         private Gender _gender;
@@ -97,7 +97,7 @@ public abstract class BaseTest
             _gender = g;
             _userImage = data;
         }
-        
+
         public Name getName() { return _name; }
         public boolean isVerified() { return _isVerified; }
         public Gender getGender() { return _gender; }
@@ -115,7 +115,7 @@ public abstract class BaseTest
             if (o == null || o.getClass() != getClass()) return false;
             FiveMinuteUser other = (FiveMinuteUser) o;
             if (_isVerified != other._isVerified) return false;
-            if (_gender != other._gender) return false; 
+            if (_gender != other._gender) return false;
             if (!_name.equals(other._name)) return false;
             byte[] otherImage = other._userImage;
             if (otherImage.length != _userImage.length) return false;
@@ -127,7 +127,7 @@ public abstract class BaseTest
             return true;
         }
     }
-    
+
     /*
     /**********************************************************
     /* High-level helpers
@@ -147,7 +147,7 @@ public abstract class BaseTest
         if (!jp.hasCurrentToken()) {
             jp.nextToken();
         }
-        assertToken(JsonToken.START_OBJECT, jp.getCurrentToken()); // main object
+        assertToken(JsonToken.START_OBJECT, jp.currentToken()); // main object
 
         assertToken(JsonToken.FIELD_NAME, jp.nextToken()); // 'Image'
         if (verifyContents) {
@@ -252,31 +252,21 @@ public abstract class BaseTest
             fail("Expected INT or STRING value, got "+t);
         }
     }
-    
-    protected void verifyFieldName(JsonParser jp, String expName)
+
+    protected void verifyFieldName(JsonParser p, String expName)
         throws IOException
     {
-        assertEquals(expName, jp.getText());
-        assertEquals(expName, jp.getCurrentName());
+        assertEquals(expName, p.getText());
+        assertEquals(expName, p.currentName());
     }
 
-    protected void verifyIntValue(JsonParser jp, long expValue)
+    protected void verifyIntValue(JsonParser p, long expValue)
         throws IOException
     {
         // First, via textual
-        assertEquals(String.valueOf(expValue), jp.getText());
+        assertEquals(String.valueOf(expValue), p.getText());
     }
 
-    /**
-     * Method that checks whether Unit tests appear to run from Ant build
-     * scripts.
-     * 
-     * @since 1.6
-     */
-    protected static boolean runsFromAnt() {
-        return "true".equals(System.getProperty("FROM_ANT"));
-    }
-    
     /*
     /**********************************************************
     /* Parser/generator construction
@@ -284,28 +274,27 @@ public abstract class BaseTest
      */
 
     protected JsonParser createParserUsingReader(String input)
-        throws IOException, JsonParseException
+        throws IOException
     {
         return createParserUsingReader(new JsonFactory(), input);
     }
 
     protected JsonParser createParserUsingReader(JsonFactory f, String input)
-        throws IOException, JsonParseException
+        throws IOException
     {
         return f.createParser(new StringReader(input));
     }
 
     protected JsonParser createParserUsingStream(String input, String encoding)
-        throws IOException, JsonParseException
+        throws IOException
     {
         return createParserUsingStream(new JsonFactory(), input, encoding);
     }
 
     protected JsonParser createParserUsingStream(JsonFactory f,
-                                                 String input, String encoding)
-        throws IOException, JsonParseException
+            String input, String encoding)
+        throws IOException
     {
-
         /* 23-Apr-2008, tatus: UTF-32 is not supported by JDK, have to
          *   use our own codec too (which is not optimal since there's
          *   a chance both encoder and decoder might have bugs, but ones
@@ -323,6 +312,37 @@ public abstract class BaseTest
 
     /*
     /**********************************************************
+    /* JDK ser/deser
+    /**********************************************************
+     */
+
+    protected final static byte[] jdkSerialize(Object o)
+    {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(2000);
+        try (ObjectOutputStream obOut = new ObjectOutputStream(bytes)) {
+            obOut.writeObject(o);
+            obOut.close();
+            return bytes.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    protected final static <T> T jdkDeserialize(byte[] raw)
+    {
+        try (ObjectInputStream objIn = new ObjectInputStream(new ByteArrayInputStream(raw))) {
+            return (T) objIn.readObject();
+        } catch (ClassNotFoundException e) {
+            fail("Missing class: "+e.getMessage());
+            return null;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /*
+    /**********************************************************
     /* Additional assertion methods
     /**********************************************************
      */
@@ -336,7 +356,7 @@ public abstract class BaseTest
 
     protected void assertToken(JsonToken expToken, JsonParser jp)
     {
-        assertToken(expToken, jp.getCurrentToken());
+        assertToken(expToken, jp.currentToken());
     }
 
     protected void assertType(Object ob, Class<?> expType)
@@ -355,7 +375,7 @@ public abstract class BaseTest
         assertTrue("Should have positive line number", location.getLineNr() > 0);
     }
 
-    protected void verifyException(Throwable e, String... matches)
+    public static void verifyException(Throwable e, String... matches)
     {
         String msg = e.getMessage();
         String lmsg = (msg == null) ? "" : msg.toLowerCase();
@@ -365,7 +385,9 @@ public abstract class BaseTest
                 return;
             }
         }
-        fail("Expected an exception with one of substrings ("+Arrays.asList(matches)+"): got one with message \""+msg+"\"");
+        fail("Expected an exception with one of substrings ("
+                +Arrays.asList(matches)+"): got one (of type "+e.getClass().getName()
+                +") with message \""+msg+"\"");
     }
 
     /**
@@ -374,7 +396,7 @@ public abstract class BaseTest
      * returning them
      */
     protected String getAndVerifyText(JsonParser jp)
-        throws IOException, JsonParseException
+        throws IOException
     {
         // Ok, let's verify other accessors
         int actLen = jp.getTextLength();
@@ -383,7 +405,7 @@ public abstract class BaseTest
         String str = jp.getText();
 
         if (str.length() !=  actLen) {
-            fail("Internal problem (jp.token == "+jp.getCurrentToken()+"): jp.getText().length() ['"+str+"'] == "+str.length()+"; jp.getTextLength() == "+actLen);
+            fail("Internal problem (jp.token == "+jp.currentToken()+"): jp.getText().length() ['"+str+"'] == "+str.length()+"; jp.getTextLength() == "+actLen);
         }
         assertEquals("String access via getText(), getTextXxx() must be the same", str, str2);
 
@@ -410,7 +432,21 @@ public abstract class BaseTest
         return result;
     }
 
-    public String quote(String str) {
+    public String q(String str) {
         return '"'+str+'"';
+    }
+
+    @Deprecated // use q
+    public String quote(String str) {
+        return q(str);
+    }
+
+    protected static String a2q(String json) {
+        return json.replace("'", "\"");
+    }
+
+    @Deprecated // use a2q
+    protected static String aposToQuotes(String json) {
+        return a2q(json);
     }
 }

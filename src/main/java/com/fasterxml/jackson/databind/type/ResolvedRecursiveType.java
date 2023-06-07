@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.JavaType;
  *
  * @since 2.7
  */
-public class ResolvedRecursiveType extends TypeBase
+public class ResolvedRecursiveType extends IdentityEqualityType
 {
     private static final long serialVersionUID = 1L;
 
@@ -26,23 +26,50 @@ public class ResolvedRecursiveType extends TypeBase
         _referencedType = ref;
     }
 
+    @Override
+    public JavaType getSuperClass() {
+        if (_referencedType != null) {
+            return _referencedType.getSuperClass();
+        }
+        return super.getSuperClass();
+    }
+
     public JavaType getSelfReferencedType() { return _referencedType; }
+
+    // 23-Jul-2019, tatu: [databind#2331] Need to also delegate this...
+    @Override
+    public TypeBindings getBindings() {
+        if (_referencedType != null) { // `null` before resolution [databind#2395]
+            return _referencedType.getBindings();
+        }
+        return super.getBindings();
+    }
 
     @Override
     public StringBuilder getGenericSignature(StringBuilder sb) {
-        return _referencedType.getGenericSignature(sb);
+        // 30-Oct-2019, tatu: Alas, need to break recursion, otherwise we'll
+        //    end up in StackOverflowError... two choices; '?' for "not known",
+        //    or erased signature.
+        if (_referencedType != null) {
+//            return _referencedType.getGenericSignature(sb);
+            return _referencedType.getErasedSignature(sb);
+        }
+        return sb.append("?");
     }
 
     @Override
     public StringBuilder getErasedSignature(StringBuilder sb) {
-        return _referencedType.getErasedSignature(sb);
+        if (_referencedType != null) {
+            return _referencedType.getErasedSignature(sb);
+        }
+        return sb;
     }
 
     @Override
     public JavaType withContentType(JavaType contentType) {
         return this;
     }
-    
+
     @Override
     public JavaType withTypeHandler(Object h) {
         return this;
@@ -68,12 +95,6 @@ public class ResolvedRecursiveType extends TypeBase
         return this;
     }
 
-    @Deprecated // since 2.7
-    @Override
-    protected JavaType _narrow(Class<?> subclass) {
-        return this;
-    }
-
     @Override
     public JavaType refine(Class<?> rawType, TypeBindings bindings,
             JavaType superClass, JavaType[] superInterfaces) {
@@ -87,15 +108,38 @@ public class ResolvedRecursiveType extends TypeBase
 
     @Override
     public String toString() {
-        return null;
+        StringBuilder sb = new StringBuilder(40)
+                .append("[recursive type; ");
+        if (_referencedType == null) {
+            sb.append("UNRESOLVED");
+        } else {
+            // [databind#1301]: Typically resolves to a loop so short-cut
+            //   and only include type-erased class
+            sb.append(_referencedType.getRawClass().getName());
+        }
+        return sb.toString();
     }
 
-    @Override
-    public boolean equals(Object o) {
-        if (o == this) return true;
-        if (o == null) return false;
-        if (o.getClass() != getClass()) return false;
+    //@Override
+    //public boolean equals(Object o) {
+        //if (o == this) return true;
+        //if (o == null) return false;
+        //if (o.getClass() == getClass()) {
+            // 16-Jun-2017, tatu: as per [databind#1658], cannot do recursive call since
+            //    there is likely to be a cycle...
 
-        return ((ResolvedRecursiveType) o).getSelfReferencedType().equals(getSelfReferencedType());
-    }
+            // but... true or false?
+            //return false;
+
+            /*
+            // Do NOT ever match unresolved references
+            if (_referencedType == null) {
+                return false;
+            }
+            return (o.getClass() == getClass()
+                    && _referencedType.equals(((ResolvedRecursiveType) o).getSelfReferencedType()));
+                    */
+        //}
+        //return false;
+    //}
 }

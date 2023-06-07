@@ -1,6 +1,7 @@
 package com.fasterxml.jackson.databind.deser.std;
 
 import com.fasterxml.jackson.core.JsonLocation;
+import com.fasterxml.jackson.core.io.ContentReference;
 import com.fasterxml.jackson.databind.DeserializationConfig;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JavaType;
@@ -15,21 +16,25 @@ import com.fasterxml.jackson.databind.deser.ValueInstantiator;
  * {@link ValueInstantiator} (not that explicit one would be very
  * hard but...)
  */
-public class JsonLocationInstantiator extends ValueInstantiator
+public class JsonLocationInstantiator
+    extends ValueInstantiator.Base
 {
-    @Override
-    public String getValueTypeDesc() {
-        return JsonLocation.class.getName();
+    private static final long serialVersionUID = 1L;
+
+    public JsonLocationInstantiator() {
+        super(JsonLocation.class);
     }
-    
+
     @Override
     public boolean canCreateFromObjectWith() { return true; }
-    
+
     @Override
     public SettableBeanProperty[] getFromObjectArguments(DeserializationConfig config) {
         JavaType intType = config.constructType(Integer.TYPE);
         JavaType longType = config.constructType(Long.TYPE);
         return new SettableBeanProperty[] {
+                // 14-Mar-2021, tatu: with 2.13 and later, not really used,
+                //   but may be produced by older versions so leave as is.
                 creatorProp("sourceRef", config.constructType(Object.class), 0),
                 creatorProp("byteOffset", longType, 1),
                 creatorProp("charOffset", longType, 2),
@@ -39,13 +44,17 @@ public class JsonLocationInstantiator extends ValueInstantiator
     }
 
     private static CreatorProperty creatorProp(String name, JavaType type, int index) {
-        return new CreatorProperty(PropertyName.construct(name), type, null,
+        return CreatorProperty.construct(PropertyName.construct(name), type, null,
                 null, null, null, index, null, PropertyMetadata.STD_REQUIRED);
     }
-    
+
     @Override
     public Object createFromObjectWith(DeserializationContext ctxt, Object[] args) {
-        return new JsonLocation(args[0], _long(args[1]), _long(args[2]),
+        // 14-Mar-2021, tatu: Before 2.13 constructor directly took "raw" source ref;
+        //   with 2.13 changed to use `InputSourceReference`... left almost as is,
+        //   for compatibility.
+        final ContentReference srcRef = ContentReference.rawReference(args[0]);
+        return new JsonLocation(srcRef, _long(args[1]), _long(args[2]),
                 _int(args[3]), _int(args[4]));
     }
 

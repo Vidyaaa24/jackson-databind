@@ -3,11 +3,10 @@ package com.fasterxml.jackson.databind.jsontype;
 import java.util.*;
 
 import com.fasterxml.jackson.annotation.*;
-import com.fasterxml.jackson.databind.BaseMapTest;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
+
+import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.NoClass;
+import com.fasterxml.jackson.databind.exc.InvalidTypeIdException;
 
 /**
  * Unit tests related to specialized handling of "default implementation"
@@ -64,7 +63,7 @@ public class TestPolymorphicWithDefaultImpl extends BaseMapTest
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
     abstract static class MysteryPolymorphic { }
 
-    // [Databind#511] types
+    // [databind#511] types
 
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME,
             include = JsonTypeInfo.As.WRAPPER_OBJECT)
@@ -82,7 +81,7 @@ public class TestPolymorphicWithDefaultImpl extends BaseMapTest
     public static class Bad {
         public List<BadItem> many;
     }
- 
+
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME,
             include = JsonTypeInfo.As.WRAPPER_OBJECT)
     @JsonSubTypes({@JsonSubTypes.Type(name="sub1", value = GoodSub1.class),
@@ -123,6 +122,24 @@ public class TestPolymorphicWithDefaultImpl extends BaseMapTest
         public Event() {}
     }
 
+    @JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, include = JsonTypeInfo.As.PROPERTY,
+            property = "clazz")
+    abstract static class BaseClass { }
+
+    static class BaseWrapper {
+        public BaseClass value;
+    }
+
+    // [databind#1533]
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY,
+            property = "type")
+    static class AsProperty {
+    }
+
+    static class AsPropertyWrapper {
+        public AsProperty value;
+    }
+
     /*
     /**********************************************************
     /* Unit tests, deserialization
@@ -160,7 +177,7 @@ public class TestPolymorphicWithDefaultImpl extends BaseMapTest
         assertEquals(Arrays.asList("a", "b"), ((MyInter) inter).blah);
     }
 
-    // [Databind#148]
+    // [databind#148]
     public void testDefaultAsNoClass() throws Exception
     {
         Object ob = MAPPER.readerFor(DefaultWithNoClass.class).readValue("{ }");
@@ -178,18 +195,18 @@ public class TestPolymorphicWithDefaultImpl extends BaseMapTest
         assertNull(ob);
     }
 
-    // [Databind#148]
+    // [databind#148]
     public void testBadTypeAsNull() throws Exception
     {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.disable(DeserializationFeature.FAIL_ON_INVALID_SUBTYPE);
-        Object ob = mapper.readValue("{}", MysteryPolymorphic.class);
+        ObjectReader r = MAPPER.readerFor(MysteryPolymorphic.class)
+                .without(DeserializationFeature.FAIL_ON_INVALID_SUBTYPE);
+        Object ob = r.readValue("{}");
         assertNull(ob);
-        ob = mapper.readValue("{ \"whatever\":13}", MysteryPolymorphic.class);
+        ob = r.readValue("{ \"whatever\":13}");
         assertNull(ob);
     }
 
-    // [Databind#511]
+    // [databind#511]
     public void testInvalidTypeId511() throws Exception {
         ObjectReader reader = MAPPER.reader().without(
                 DeserializationFeature.FAIL_ON_INVALID_SUBTYPE,
@@ -203,10 +220,10 @@ public class TestPolymorphicWithDefaultImpl extends BaseMapTest
         assertNotNull(badResult);
     }
 
-    // [Databind#656]
+    // [databind#656]
     public void testDefaultImplWithObjectWrapper() throws Exception
     {
-        BaseFor656 value = MAPPER.readValue(aposToQuotes("{'foobar':{'a':3}}"), BaseFor656.class);
+        BaseFor656 value = MAPPER.readValue(a2q("{'foobar':{'a':3}}"), BaseFor656.class);
         assertNotNull(value);
         assertEquals(ImplFor656.class, value.getClass());
         assertEquals(3, ((ImplFor656) value).a);
@@ -216,7 +233,7 @@ public class TestPolymorphicWithDefaultImpl extends BaseMapTest
     {
         ObjectReader reader = MAPPER.readerFor(CallRecord.class).without(
                 DeserializationFeature.FAIL_ON_INVALID_SUBTYPE);
-        String json = aposToQuotes("{'version':0.0,'application':'123',"
+        String json = a2q("{'version':0.0,'application':'123',"
                 +"'item':{'type':'xevent','location':'location1'},"
                 +"'item2':{'type':'event','location':'location1'}}");
         // can't read item2 - which is valid
@@ -224,10 +241,42 @@ public class TestPolymorphicWithDefaultImpl extends BaseMapTest
         assertNull(r.item);
         assertNotNull(r.item2);
 
-        json = aposToQuotes("{'item':{'type':'xevent','location':'location1'}, 'version':0.0,'application':'123'}");
+        json = a2q("{'item':{'type':'xevent','location':'location1'}, 'version':0.0,'application':'123'}");
         CallRecord r3 = reader.readValue(json);
         assertNull(r3.item);
         assertEquals("123", r3.application);
+    }
+
+    public void testUnknownClassAsSubtype() throws Exception
+    {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.configure(DeserializationFeature.FAIL_ON_INVALID_SUBTYPE, false);
+        BaseWrapper w = mapper.readValue(a2q
+                ("{'value':{'clazz':'com.foobar.Nothing'}}'"),
+                BaseWrapper.class);
+        assertNotNull(w);
+        assertNull(w.value);
+    }
+
+    public void testWithoutEmptyStringAsNullObject1533() throws Exception
+    {
+        ObjectReader r = MAPPER.readerFor(AsPropertyWrapper.class)
+                .without(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT);
+        try {
+            r.readValue("{ \"value\": \"\" }");
+            fail("Expected InvalidTypeIdException");
+        } catch (InvalidTypeIdException e) {
+            verifyException(e, "missing type id property 'type'");
+        }
+    }
+
+    // [databind#1533]
+    public void testWithEmptyStringAsNullObject1533() throws Exception
+    {
+        ObjectReader r = MAPPER.readerFor(AsPropertyWrapper.class)
+                .with(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT);
+        AsPropertyWrapper wrapper = r.readValue("{ \"value\": \"\" }");
+        assertNull(wrapper.value);
     }
 
     /*

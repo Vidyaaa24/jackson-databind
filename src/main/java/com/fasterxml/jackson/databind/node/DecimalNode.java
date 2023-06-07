@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.*;
  * Numeric node that contains values that do not fit in simple
  * integer (int, long) or floating point (double) values.
  */
+@SuppressWarnings("serial")
 public class DecimalNode
     extends NumericNode
 {
@@ -23,7 +24,7 @@ public class DecimalNode
 
     final protected BigDecimal _value;
 
-    /* 
+    /*
     /**********************************************************
     /* Construction
     /**********************************************************
@@ -33,7 +34,7 @@ public class DecimalNode
 
     public static DecimalNode valueOf(BigDecimal d) { return new DecimalNode(d); }
 
-    /* 
+    /*
     /**********************************************************
     /* BaseJsonNode extended API
     /**********************************************************
@@ -44,7 +45,7 @@ public class DecimalNode
     @Override
     public JsonParser.NumberType numberType() { return JsonParser.NumberType.BIG_DECIMAL; }
 
-    /* 
+    /*
     /**********************************************************
     /* Overrridden JsonNode methods
     /**********************************************************
@@ -52,7 +53,7 @@ public class DecimalNode
 
     @Override
     public boolean isFloatingPointNumber() { return true; }
-    
+
     @Override
     public boolean isBigDecimal() { return true; }
 
@@ -62,7 +63,14 @@ public class DecimalNode
     @Override public boolean canConvertToLong() {
         return (_value.compareTo(MIN_LONG) >= 0) && (_value.compareTo(MAX_LONG) <= 0);
     }
-    
+
+    @Override // since 2.12
+    public boolean canConvertToExactIntegral() {
+        return (_value.signum() == 0)
+                || (_value.scale() <= 0)
+                || (_value.stripTrailingZeros().scale() <= 0);
+    }
+
     @Override
     public Number numberValue() { return _value; }
 
@@ -77,11 +85,13 @@ public class DecimalNode
 
 
     @Override
-    public BigInteger bigIntegerValue() { return _value.toBigInteger(); }
+    public BigInteger bigIntegerValue() {
+        return _bigIntFromBigDec(_value);
+    }
 
     @Override
     public float floatValue() { return _value.floatValue(); }
-    
+
     @Override
     public double doubleValue() { return _value.doubleValue(); }
 
@@ -95,7 +105,7 @@ public class DecimalNode
 
     @Override
     public final void serialize(JsonGenerator jgen, SerializerProvider provider)
-        throws IOException, JsonProcessingException
+        throws IOException
     {
         // 07-Jul-2013, tatu: Should be handled by propagating setting to JsonGenerator
         //    so this should not be needed:

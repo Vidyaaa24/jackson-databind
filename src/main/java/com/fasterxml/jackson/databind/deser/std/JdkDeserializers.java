@@ -3,6 +3,8 @@ package com.fasterxml.jackson.databind.deser.std;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.fasterxml.jackson.databind.*;
 
@@ -18,14 +20,32 @@ public class JdkDeserializers
         Class<?>[] types = new Class<?>[] {
                 UUID.class,
                 AtomicBoolean.class,
+                AtomicInteger.class,
+                AtomicLong.class,
                 StackTraceElement.class,
-                ByteBuffer.class
+                ByteBuffer.class,
+                Void.class
         };
         for (Class<?> cls : types) { _classNames.add(cls.getName()); }
         for (Class<?> cls : FromStringDeserializer.types()) { _classNames.add(cls.getName()); }
     }
 
+    /**
+     * @deprecated Since 2.14 use the variant that takes one more argument
+     */
+    @Deprecated // since 2.14
     public static JsonDeserializer<?> find(Class<?> rawType, String clsName)
+        throws JsonMappingException
+    {
+        return find(null, rawType, clsName);
+    }
+
+    /**
+     * @since 2.14
+     */
+    public static JsonDeserializer<?> find(DeserializationContext ctxt,
+            Class<?> rawType, String clsName)
+        throws JsonMappingException
     {
         if (_classNames.contains(clsName)) {
             JsonDeserializer<?> d = FromStringDeserializer.findDeserializer(rawType);
@@ -36,16 +56,29 @@ public class JdkDeserializers
                 return new UUIDDeserializer();
             }
             if (rawType == StackTraceElement.class) {
-                return new StackTraceElementDeserializer();
+                return StackTraceElementDeserializer.construct(ctxt);
             }
             if (rawType == AtomicBoolean.class) {
-                // (note: AtomicInteger/Long work due to single-arg constructor. For now?
                 return new AtomicBooleanDeserializer();
+            }
+            if (rawType == AtomicInteger.class) {
+                return new AtomicIntegerDeserializer();
+            }
+            if (rawType == AtomicLong.class) {
+                return new AtomicLongDeserializer();
             }
             if (rawType == ByteBuffer.class) {
                 return new ByteBufferDeserializer();
             }
+            if (rawType == Void.class) {
+                return NullifyingDeserializer.instance;
+            }
         }
         return null;
+    }
+
+    // @since 2.11
+    public static boolean hasDeserializerFor(Class<?> rawType) {
+        return _classNames.contains(rawType.getName());
     }
 }

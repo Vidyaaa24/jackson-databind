@@ -1,6 +1,5 @@
 package com.fasterxml.jackson.databind;
 
-
 /**
  * Defines interface for resolvers that can resolve abstract types into concrete
  * ones; either by using static mappings, or possibly by materializing
@@ -22,19 +21,28 @@ public abstract class AbstractTypeResolver
      * of bindings; that is, it is legal to return type that could be further
      * resolved: caller is expected to keep calling this method on registered
      * resolvers, until a concrete type is located.
-     * 
-     * @param config Configuration in use; should always be of type
-     *    <code>DeserializationConfig</code>
+     *
+     * @param config Configuration in use
+     * @param type Type to find mapping for
+     *
+     * @return Type to map given input type (if mapping found) or {@code null} (if not).
      */
     public JavaType findTypeMapping(DeserializationConfig config, JavaType type) {
         return null;
     }
 
-    // !!! 29-Nov-2015, tatu: TODO: mark deprecated in 2.8
     /**
      * Older variant of {@link #resolveAbstractType(DeserializationConfig, BeanDescription)};
-     * obsoleted in 2.7, to be deprecated in 2.8
+     * obsoleted in 2.7
+     *
+     * @deprecated since 2.8 (may be removed from 2.9 or later)
+     *
+     * @param config Configuration in use
+     * @param type Type to resolve
+     *
+     * @return Resolved concrete type
      */
+    @Deprecated
     public JavaType resolveAbstractType(DeserializationConfig config,
             JavaType type) {
         return null;
@@ -46,14 +54,10 @@ public abstract class AbstractTypeResolver
      * when no concrete implementation was found.
      * It will be called after checking all other possibilities,
      * including defaulting.
-     *<p>
-     * Default implementation will call obsolete method for Jackson 2.7,
-     * to try to keep some level of backwards compatibility.
-     * 
-     * @param config Configuration in use; should always be of type
-     *    <code>DeserializationConfig</code>
+     *
+     * @param config Configuration in use
      * @param typeDesc Description of the POJO type to resolve
-     * 
+     *
      * @return Resolved concrete type (which should retain generic
      *    type parameters of input type, if any), if resolution succeeds;
      *    null if resolver does not know how to resolve given type
@@ -62,6 +66,6 @@ public abstract class AbstractTypeResolver
      */
     public JavaType resolveAbstractType(DeserializationConfig config,
             BeanDescription typeDesc) {
-        return resolveAbstractType(config, typeDesc.getType());
+        return null;
     }
 }

@@ -41,7 +41,7 @@ public class TestConfig
     public static class SimpleBean {
         public int x = 1;
     }
-    
+
     /*
     /**********************************************************
     /* Main tests
@@ -57,7 +57,7 @@ public class TestConfig
     public void testEnumIndexes()
     {
         int max = 0;
-        
+
         for (SerializationFeature f : SerializationFeature.values()) {
             max = Math.max(max, f.ordinal());
         }
@@ -65,7 +65,7 @@ public class TestConfig
             fail("Max number of SerializationFeature enums reached: "+max);
         }
     }
-    
+
     public void testDefaults()
     {
         SerializationConfig cfg = MAPPER.getSerializationConfig();
@@ -83,7 +83,7 @@ public class TestConfig
         // since 1.3:
         assertTrue(cfg.isEnabled(MapperFeature.AUTO_DETECT_IS_GETTERS));
         // since 1.4
-        
+
         assertTrue(cfg.isEnabled(SerializationFeature.FAIL_ON_EMPTY_BEANS));
         // since 1.5
         assertTrue(cfg.isEnabled(MapperFeature.DEFAULT_VIEW_INCLUSION));
@@ -124,8 +124,9 @@ public class TestConfig
         Map<String,Object> result = writeAndMap(MAPPER, new AnnoBean());
         assertEquals(2, result.size());
 
-        ObjectMapper m2 = new ObjectMapper();
-        m2.configure(MapperFeature.USE_ANNOTATIONS, false);
+        ObjectMapper m2 = jsonMapperBuilder()
+                .configure(MapperFeature.USE_ANNOTATIONS, false)
+                .build();
         result = writeAndMap(m2, new AnnoBean());
         assertEquals(1, result.size());
     }
@@ -133,7 +134,7 @@ public class TestConfig
     /**
      * Test for verifying working of [JACKSON-191]
      */
-    public void testProviderConfig() throws Exception   
+    public void testProviderConfig() throws Exception
     {
         ObjectMapper mapper = new ObjectMapper();
         DefaultSerializerProvider prov = (DefaultSerializerProvider) mapper.getSerializerProvider();
@@ -170,7 +171,7 @@ public class TestConfig
 
         // [Issue#12]
         StringWriter sw = new StringWriter();
-        JsonGenerator jgen = MAPPER.getFactory().createGenerator(sw);
+        JsonGenerator jgen = MAPPER.createGenerator(sw);
         indentWriter.writeValue(jgen, input);
         jgen.close();
         assertEquals(INDENTED, sw.toString());
@@ -179,7 +180,7 @@ public class TestConfig
         sw = new StringWriter();
         ObjectMapper m2 = new ObjectMapper();
         m2.enable(SerializationFeature.INDENT_OUTPUT);
-        jgen = m2.getFactory().createGenerator(sw);
+        jgen = m2.createGenerator(sw);
         m2.writeValue(jgen, input);
         jgen.close();
         assertEquals(INDENTED, sw.toString());
@@ -187,8 +188,9 @@ public class TestConfig
 
     public void testNoAccessOverrides() throws Exception
     {
-        ObjectMapper m = new ObjectMapper();
-        m.disable(MapperFeature.CAN_OVERRIDE_ACCESS_MODIFIERS);
+        ObjectMapper m = jsonMapperBuilder()
+            .disable(MapperFeature.CAN_OVERRIDE_ACCESS_MODIFIERS)
+            .build();
         assertEquals("{\"x\":1}", m.writeValueAsString(new SimpleBean()));
     }
 
@@ -196,7 +198,7 @@ public class TestConfig
     {
         ObjectMapper mapper = new ObjectMapper();
         TimeZone tz1 = TimeZone.getTimeZone("America/Los_Angeles");
-        TimeZone tz2 = TimeZone.getTimeZone("Central Standard Time");
+        TimeZone tz2 = TimeZone.getTimeZone("US/Central");
 
         // sanity checks
         assertEquals(tz1, tz1);
@@ -212,7 +214,7 @@ public class TestConfig
         // also better stick via reader/writer as well
         assertEquals(tz1, mapper.writer().getConfig().getTimeZone());
         assertEquals(tz1, mapper.reader().getConfig().getTimeZone());
-        
+
         SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         f.setTimeZone(tz2);
         mapper.setDateFormat(f);
@@ -223,7 +225,7 @@ public class TestConfig
         assertEquals(tz1, mapper.writer().getConfig().getTimeZone());
         assertEquals(tz1, mapper.reader().getConfig().getTimeZone());
     }
-    
+
     private final static String getLF() {
         return System.getProperty("line.separator");
     }

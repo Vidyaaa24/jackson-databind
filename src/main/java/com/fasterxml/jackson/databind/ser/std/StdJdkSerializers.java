@@ -27,15 +27,13 @@ public class StdJdkSerializers
         HashMap<Class<?>,Object> sers = new HashMap<Class<?>,Object>();
 
         // First things that 'toString()' can handle
-        final ToStringSerializer sls = ToStringSerializer.instance;
+        sers.put(java.net.URL.class, new ToStringSerializer(java.net.URL.class));
+        sers.put(java.net.URI.class, new ToStringSerializer(java.net.URI.class));
 
-        sers.put(java.net.URL.class, sls);
-        sers.put(java.net.URI.class, sls);
-
-        sers.put(Currency.class, sls);
+        sers.put(Currency.class, new ToStringSerializer(Currency.class));
         sers.put(UUID.class, new UUIDSerializer());
-        sers.put(java.util.regex.Pattern.class, sls);
-        sers.put(Locale.class, sls);
+        sers.put(java.util.regex.Pattern.class, new ToStringSerializer(java.util.regex.Pattern.class));
+        sers.put(Locale.class, new ToStringSerializer(Locale.class));
 
         // then atomic types (note: AtomicReference defined elsewhere)
         sers.put(AtomicBoolean.class, AtomicBooleanSerializer.class);
@@ -50,19 +48,6 @@ public class StdJdkSerializers
         sers.put(Void.class, NullSerializer.instance);
         sers.put(Void.TYPE, NullSerializer.instance);
 
-        // 09-Jan-2015, tatu: As per [databind#1073], let's try to guard against possibility
-        //   of some environments missing `java.sql.` types
-        try {
-            // note: timestamps are very similar to java.util.Date, thus serialized as such
-            sers.put(java.sql.Timestamp.class, DateSerializer.instance);
-    
-            // leave some of less commonly used ones as lazy, no point in proactive construction
-            sers.put(java.sql.Date.class, SqlDateSerializer.class);
-            sers.put(java.sql.Time.class, SqlTimeSerializer.class);
-        } catch (NoClassDefFoundError e) {
-            // nothing much we can do here; could log, but probably not useful for now.
-        }
-        
         return sers.entrySet();
     }
 
@@ -76,38 +61,46 @@ public class StdJdkSerializers
         extends StdScalarSerializer<AtomicBoolean>
     {
         public AtomicBooleanSerializer() { super(AtomicBoolean.class, false); }
-    
+
         @Override
-        public void serialize(AtomicBoolean value, JsonGenerator gen, SerializerProvider provider) throws IOException, JsonGenerationException {
+        public void serialize(AtomicBoolean value, JsonGenerator gen, SerializerProvider provider) throws IOException {
             gen.writeBoolean(value.get());
         }
-    
+
+        /**
+         * @deprecated Since 2.15
+         */
+        @Deprecated
         @Override
         public JsonNode getSchema(SerializerProvider provider, Type typeHint) {
             return createSchemaNode("boolean", true);
         }
-        
+
         @Override
         public void acceptJsonFormatVisitor(JsonFormatVisitorWrapper visitor, JavaType typeHint) throws JsonMappingException {
             visitor.expectBooleanFormat(typeHint);
         }
     }
-    
+
     public static class AtomicIntegerSerializer
         extends StdScalarSerializer<AtomicInteger>
     {
         public AtomicIntegerSerializer() { super(AtomicInteger.class, false); }
-    
+
         @Override
-        public void serialize(AtomicInteger value, JsonGenerator gen, SerializerProvider provider) throws IOException, JsonGenerationException {
+        public void serialize(AtomicInteger value, JsonGenerator gen, SerializerProvider provider) throws IOException {
             gen.writeNumber(value.get());
         }
-    
+
+        /**
+         * @deprecated Since 2.15
+         */
+        @Deprecated
         @Override
         public JsonNode getSchema(SerializerProvider provider, Type typeHint) {
             return createSchemaNode("integer", true);
         }
-        
+
         @Override
         public void acceptJsonFormatVisitor(JsonFormatVisitorWrapper visitor, JavaType typeHint) throws JsonMappingException
         {
@@ -119,17 +112,21 @@ public class StdJdkSerializers
         extends StdScalarSerializer<AtomicLong>
     {
         public AtomicLongSerializer() { super(AtomicLong.class, false); }
-    
+
         @Override
-        public void serialize(AtomicLong value, JsonGenerator gen, SerializerProvider provider) throws IOException, JsonGenerationException {
+        public void serialize(AtomicLong value, JsonGenerator gen, SerializerProvider provider) throws IOException {
             gen.writeNumber(value.get());
         }
-    
+
+        /**
+         * @deprecated Since 2.15
+         */
+        @Deprecated
         @Override
         public JsonNode getSchema(SerializerProvider provider, Type typeHint) {
             return createSchemaNode("integer", true);
         }
-        
+
         @Override
         public void acceptJsonFormatVisitor(JsonFormatVisitorWrapper visitor, JavaType typeHint)
             throws JsonMappingException
